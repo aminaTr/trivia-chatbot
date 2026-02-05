@@ -1,0 +1,8 @@
+export const DECISIONS = {
+  ANSWER: "ANSWER",
+  SKIP: "SKIP",
+  HINT: "HINT",
+  REPEAT: "REPEAT",
+  CLARIFY: "CLARIFY",
+  END_SESSION: "END_SESSION",
+};

@@ -1,12 +1,12 @@
 import "dotenv/config";
-import express from "express";
+import app from "./app.js";
 import http from "http";
 import { Server } from "socket.io";
 import mongoose from "mongoose";
 
-import triviaSocket from "./sockets/trivia.socket.js";
+import triviaSocket from "./sockets/trivia2.socket.js";
+// import triviaSocket from "./sockets/trivia.socket.js";
 
-const app = express();
 const server = http.createServer(app);
 const port = process.env.PORT || 5000;
 
@@ -21,6 +21,10 @@ const io = new Server(server, {
 io.on("connection", (socket) => {
   console.log("Socket connected:", socket.id);
   triviaSocket(socket, io);
+
+  socket.on("disconnect", () => {
+    console.log("Client disconnected:", socket.id);
+  });
 });
 
 // MongoDB connection + start server

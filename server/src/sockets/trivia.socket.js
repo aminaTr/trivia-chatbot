@@ -1,150 +1,114 @@
-import TriviaSession from "../models/TriviaSession.js";
-import Question from "../models/Question.js";
-import generateSessionId from "../utils/generateSessionId.js";
-import { evaluateAnswerGroq } from "../utils/evaluateAnswerGroq.js";
+import { getSession, startTriviaSession } from "../services/session.service.js";
+import { handleUserIntent } from "../services/decisionEngine.service.js";
 
 export default function triviaSocket(socket, io) {
-  /**
-   * START SESSION
-   */
-  socket.on("start-session", async () => {
-    const sessionId = generateSessionId();
-
-    const questions = await Question.aggregate([
-      { $sample: { size: 10 } },
-      { $project: { answer: 0 } }, // hide answer
-    ]);
-
-    const session = await TriviaSession.create({
-      sessionId,
-      questions: questions.map((q) => ({
-        questionId: q._id,
-      })),
-    });
-
-    socket.join(sessionId);
-
-    socket.emit("session-started", {
-      sessionId,
-      question: questions[0],
-    });
-  });
-
-  /**
-   * SUBMIT ANSWER
-   */
-  // socket.on("submit-answer", async ({ sessionId, questionId, answer }) => {
-  //   const session = await TriviaSession.findOne({ sessionId });
-  //   const question = await Question.findById(questionId);
-
-  //   if (!session || !question) return;
-
-  //   const { isCorrect, assistantResponse } = await evaluateAnswerGroq(
-  //     question.question,
-  //     question.answer,
-  //     answer,
-  //   );
-
-  //   const qAttempt = session.questions.find(
-  //     (q) => q.questionId.toString() === questionId,
-  //   );
-
-  //   qAttempt.userAnswer = answer;
-  //   qAttempt.isCorrect = isCorrect;
-  //   qAttempt.answeredAt = new Date();
-  //   if (isCorrect) session.score += 1;
-
-  //   await session.save();
-
-  //   socket.emit("answer-result", {
-  //     correct: isCorrect,
-  //     correctAnswer: isCorrect ? null : question.answer,
-  //     assistantResponse: assistantResponse,
-  //   });
-  // });
-
-  socket.on("submit-answer", async ({ sessionId, questionId, answer }) => {
-    const session = await TriviaSession.findOne({ sessionId });
-    const question = await Question.findById(questionId);
-
-    if (!session || !question) return;
-
-    // 1️⃣ Evaluate the answer via Groq LLM
-    const { isCorrect, assistantResponse } = await evaluateAnswerGroq(
-      question.question,
-      question.answer,
-      answer,
-    );
-
-    // 2️⃣ Update the question attempt in session
-    const qAttempt = session.questions.find(
-      (q) => q.questionId.toString() === questionId,
-    );
-
-    if (qAttempt) {
-      qAttempt.userAnswer = answer;
-      qAttempt.isCorrect = isCorrect;
-      qAttempt.answeredAt = new Date();
-    }
-
-    if (isCorrect) session.score += 1;
-
-    // Increment current question index
-    session.currentQuestionIndex += 1;
-
-    // Check if quiz is finished
-    const totalQuestions = session.questions.length; // or fixed total
-    if (session.currentQuestionIndex >= totalQuestions) {
-      session.status = "completed";
-      session.endedAt = new Date();
-      await session.save();
-
-      socket.emit("answer-result", {
-        correct: isCorrect,
-        correctAnswer: isCorrect ? null : question.answer,
-        assistantResponse,
+  socket.on("start-session", async ({ difficulty, category }) => {
+    try {
+      console.log("socket", difficulty);
+      const { sessionId, firstQuestion } = await startTriviaSession({
+        questionCount: 12,
+        skip: 2,
+        difficulty,
+        category,
       });
 
-      socket.emit("session-ended", { score: session.score });
-      return;
+      socket.join(sessionId);
+
+      socket.emit("session-started", {
+        sessionId,
+        question: firstQuestion,
+      });
+    } catch (error) {
+      console.error("Start session error:", error);
+
+      socket.emit("error", {
+        message: "Failed to start trivia session",
+      });
     }
-
-    // 5️⃣ Fetch next question attempt from session
-    const nextQAttempt = session.questions[session.currentQuestionIndex];
-    const nextQuestion = await Question.findById(nextQAttempt.questionId);
-
-    await session.save();
-
-    // 6️⃣ Emit updates
-    socket.emit("answer-result", {
-      correct: isCorrect,
-      correctAnswer: isCorrect ? null : question.answer,
-      assistantResponse,
-    });
-    console.log("session.score", session.score);
-    socket.emit("score-update", { score: session.score });
-    socket.emit("next-question", { question: nextQuestion });
   });
+  socket.on("user-speech", async ({ sessionId, questionId, transcript }) => {
+    try {
+      const session = await getSession({ sessionId });
+      if (!session) throw new Error("Session not found");
 
-  /**
-   * GET HINT
-   */
-  socket.on("request-hint", async ({ sessionId, questionId }) => {
-    const session = await TriviaSession.findOne({ sessionId });
-    const question = await Question.findById(questionId);
+      const context = session.history;
+      const result = await handleUserIntent({
+        sessionId,
+        questionId,
+        userInput: transcript,
+        context,
+      });
+      console.log("result", result);
 
-    if (!session || !question) return;
+      // 1️⃣ Answer result
+      if (result.isCorrect !== undefined) {
+        socket.emit("answer-result", {
+          correct: result.isCorrect,
+          correctAnswer: result.correctAnswer,
+          assistantResponse: result.assistantResponse,
+        });
+        socket.emit("score-update", { score: result.score });
 
-    const qAttempt = session.questions.find(
-      (q) => q.questionId.toString() === questionId,
-    );
+        if (result.isCompleted) {
+          socket.emit("session-ended", { score: result.score });
+        } else {
+          console.log("next question");
+          socket.emit("next-question", { question: result.nextQuestion });
+        }
+        return;
+      }
 
-    if (qAttempt.hintsUsed >= 2) return;
+      // 2️⃣ Hint
+      if (result.hint) {
+        socket.emit("hint", {
+          hint: result.hint,
+          assistantResponse: result.assistantResponse,
+        });
+        return;
+      }
 
-    const hint = question.hints[qAttempt.hintsUsed].hintText;
-    qAttempt.hintsUsed += 1;
+      // 3️⃣ Skip
+      if (result.skipped) {
+        socket.emit("skip", { assistantResponse: result.assistantResponse }); // frontend triggers next question
+        return;
+      }
 
-    await session.save();
-    socket.emit("hint", hint);
+      // 4️⃣ Repeat
+      if (result.repeat) {
+        console.log("Emitting repeat");
+        socket.emit("repeat", { assistantResponse: result.assistantResponse }); // frontend repeats current question
+        return;
+      }
+
+      // 5️⃣ Unknown
+      if (result.unknown) {
+        socket.emit("unknown", {
+          assistantResponse: result.assistantResponse,
+        });
+        return;
+      }
+
+      if (result.hintExhausted || result.exhausted) {
+        socket.emit("hint-exhausted", {
+          assistantResponse: result.hintExhausted
+            ? result?.assistantResponse ||
+              "You've exhausted your hints for this question."
+            : "No more hints available for this question.",
+        });
+        return;
+      }
+
+      if (result.stop) {
+        console.log("Emitting stop");
+        socket.emit("stop-trivia", {
+          assistantResponse:
+            result?.assistantResponse || "Okay, stopping trivia early.",
+        });
+        return;
+      }
+    } catch (err) {
+      console.error("Decision engine error:", err);
+      socket.emit("error", { message: "Failed to process user speech" });
+    }
   });
 }

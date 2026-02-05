@@ -22,6 +22,10 @@ const questionAttemptSchema = new Schema(
       min: 0,
       max: 2,
     },
+    skipped: {
+      type: Boolean,
+      default: false,
+    },
     answeredAt: {
       type: Date,
     },
@@ -56,6 +60,24 @@ const triviaSessionSchema = new Schema(
       enum: ["active", "completed", "abandoned"],
       default: "active",
     },
+    skips: {
+      type: Number,
+      default: 0,
+    },
+    history: [
+      {
+        questionId: Schema.Types.ObjectId,
+        question: String,
+        correctAnswer: String,
+        userAnswer: String,
+        assistantResponse: String,
+        action: {
+          type: String,
+          enum: ["ANSWER", "HINT", "SKIP", "REPEAT"],
+        },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
     startedAt: {
       type: Date,
       default: Date.now,
