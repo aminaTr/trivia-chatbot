@@ -1,0 +1,258 @@
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Card } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogClose,
+} from "@/components/ui/dialog";
+
+// import TriviaBot from "./TriviaBot";
+import TriviaBot from "@/components/trivia/TriviaBot";
+import { useEffect, useRef, useState } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { getCategories } from "@/api/home";
+
+const Home = () => {
+  // const [started, setStarted] = useState(false);
+  const startedRef = useRef(false);
+  const [started, setStarted] = useState(false);
+  const [difficulty, setDifficulty] = useState("easy");
+  const [category, setCategory] = useState("");
+  const [categories, setCategories] = useState<string[]>([]);
+
+  useEffect(() => {
+    // Reset started state when difficulty or category changes
+    startedRef.current = false;
+    setStarted(false);
+  }, [difficulty, category]);
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      const categories = await getCategories();
+      setCategories(categories);
+    };
+
+    fetchCategories();
+  }, []);
+
+  useEffect(() => {
+    if (categories.length > 0 && !category) {
+      // Check if "General Knowledge" exists, else fallback to first category
+      const generalCat =
+        categories.find((c) => c.toLowerCase().includes("general")) ||
+        categories[0];
+
+      setCategory(generalCat);
+    }
+  }, [categories]);
+
+  return (
+    <div className="min-h-screen flex flex-col">
+      {/* ================= TOP NAVBAR ================= */}
+      <header className="w-full border-b bg-background">
+        <div className="flex items-center justify-between px-6 py-4">
+          <h1 className="text-xl font-semibold tracking-tight">
+            🎯 Trivia Chatbot
+          </h1>
+
+          {/* Profile / Auth placeholder */}
+          <div className="flex items-center gap-3">
+            {/* Replace with auth logic later */}
+            <Button variant="outline">Login</Button>
+
+            <Avatar>
+              <AvatarFallback>U</AvatarFallback>
+            </Avatar>
+          </div>
+        </div>
+      </header>
+
+      {/* ================= MAIN BODY ================= */}
+      <div className="flex flex-1 relative">
+        {/* ---------- SIDEBAR NAV ---------- */}
+        <aside className="sticky w-64 border-r p-4 hidden md:block">
+          <nav className="space-y-2">
+            <h2 className="text-sm font-semibold text-muted-foreground mb-2">
+              Navigation
+            </h2>
+
+            <Button variant="ghost" className="w-full justify-start">
+              🧠 Start Trivia
+            </Button>
+            <Button variant="ghost" className="w-full justify-start">
+              📚 Categories
+            </Button>
+            <Button variant="ghost" className="w-full justify-start">
+              🎚 Difficulty
+            </Button>
+            <Button variant="ghost" className="w-full justify-start">
+              🏆 Leaderboard
+            </Button>
+            <Button variant="ghost" className="w-full justify-start">
+              ⚙️ Settings
+            </Button>
+          </nav>
+        </aside>
+
+        {/* ---------- MAIN CONTENT ---------- */}
+        <main className="flex-1 p-3 ">
+          {/* Mobile Sidebar Button */}
+          <div className="md:hidden p-3">
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full">
+                  ☰ Menu
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="w-64 p-4">
+                <DialogHeader>
+                  <DialogTitle>Navigation</DialogTitle>
+                </DialogHeader>
+                <nav className="flex flex-col space-y-2 mt-4">
+                  <Button variant="ghost" className="w-full justify-start">
+                    🧠 Start Trivia
+                  </Button>
+                  <Button variant="ghost" className="w-full justify-start">
+                    📚 Categories
+                  </Button>
+                  <Button variant="ghost" className="w-full justify-start">
+                    🎚 Difficulty
+                  </Button>
+                  <Button variant="ghost" className="w-full justify-start">
+                    🏆 Leaderboard
+                  </Button>
+                  <Button variant="ghost" className="w-full justify-start">
+                    ⚙️ Settings
+                  </Button>
+                </nav>
+
+                <DialogClose asChild>
+                  <Button variant="outline" className="mt-4 w-full">
+                    Close
+                  </Button>
+                </DialogClose>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          <div
+            className={`grid grid-cols-1 ${started ? "lg:grid-cols-2" : "lg:grid-cols-3"} gap-3 h-full`}
+          >
+            {/* ======= TRIVIA CHAT CONTAINER (MIDDLE) ======= */}
+            <div className="lg:col-span-2 flex flex-col">
+              <Card className="flex-1 p-4">
+                <h2 className="text-lg font-semibold  ">Trivia Chat</h2>
+
+                {/* ===== Filters ===== */}
+                <div className="flex flex-col sm:flex-row sm:gap-3 gap-2">
+                  {/* Difficulty */}
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:w-1/2 gap-2">
+                    <Label className="whitespace-nowrap text-sm sm:text-base truncate">
+                      Difficulty
+                    </Label>
+                    <Select
+                      value={difficulty}
+                      onValueChange={setDifficulty}
+                      disabled={started}
+                    >
+                      <SelectTrigger className="w-full sm:flex-1 text-sm">
+                        <SelectValue placeholder="Select difficulty" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="easy">Easy</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="hard">Hard</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Category */}
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:w-1/2 gap-2">
+                    <Label
+                      htmlFor="category"
+                      className="whitespace-nowrap text-sm sm:text-base truncate"
+                    >
+                      Category
+                    </Label>
+                    <Select
+                      value={category}
+                      onValueChange={setCategory}
+                      disabled={started}
+                    >
+                      <SelectTrigger className="w-full sm:flex-1 text-sm">
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((cat, index) => (
+                          <SelectItem
+                            key={`${cat}-${index}`}
+                            value={cat}
+                            className="truncate"
+                          >
+                            {cat}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <Separator className="mb-4" />
+
+                {/* ===== Trivia Bot ===== */}
+                <div className=" text-muted-foreground">
+                  <TriviaBot
+                    startedRef={startedRef}
+                    started={started}
+                    setStarted={setStarted}
+                    difficulty={difficulty}
+                    category={category}
+                  />
+                </div>
+              </Card>
+            </div>
+
+            {/* Left / Info Section */}
+            <div className={`lg:col-span-1 space-y-4 ${started && "hidden"}`}>
+              <Card className="p-4">
+                <h3 className="font-semibold mb-2">How it works</h3>
+                <p className="text-sm text-muted-foreground">
+                  Ask trivia questions using voice or text. Request hints
+                  anytime. Earn points for correct answers.
+                </p>
+              </Card>
+
+              <Card className="p-4">
+                <h3 className="font-semibold mb-2">Your Progress</h3>
+                <p className="text-sm text-muted-foreground">
+                  Login to track score, history, and streaks.
+                </p>
+              </Card>
+            </div>
+          </div>
+        </main>
+      </div>
+
+      {/* ================= FOOTER ================= */}
+      <footer className="border-t px-6 py-4 text-sm text-muted-foreground">
+        <div className="flex justify-between items-center">
+          <span>© 2026 Trivia Chatbot</span>
+          <span>Built with React & shadcn/ui</span>
+        </div>
+      </footer>
+    </div>
+  );
+};
+
+export default Home;

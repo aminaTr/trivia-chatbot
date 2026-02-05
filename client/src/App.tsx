@@ -1,5 +1,5 @@
-import TriviaGame from "./pages/TriviaGame";
+import Home from "./pages/Home";
 
 export default function App() {
-  return <TriviaGame />;
+  return <Home />;
 }

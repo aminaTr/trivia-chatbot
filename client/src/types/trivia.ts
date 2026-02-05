@@ -13,6 +13,6 @@ export interface Question {
 
 export interface AnswerResult {
   correct: boolean;
-  score: number;
+  correctAnswer: string;
   assistantResponse: string;
 }
