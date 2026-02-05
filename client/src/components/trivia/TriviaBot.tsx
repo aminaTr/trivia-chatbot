@@ -60,6 +60,11 @@ export default function TriviaBot({
     setQuestion(null);
     setSessionId(null);
 
+    SpeechRecognition.startListening({
+      continuous: true,
+      language: "en-US",
+    });
+
     socket.emit("start-session", { difficulty, category });
   };
 
