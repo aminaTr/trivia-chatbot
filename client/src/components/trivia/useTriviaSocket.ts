@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import socket from "@/api/socket";
 import type { AnswerResult, Question } from "@/types/trivia";
 import { useRef } from "react";
