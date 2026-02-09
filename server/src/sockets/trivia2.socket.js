@@ -66,142 +66,155 @@ export default function triviaSocket(socket, io) {
     }
   });
 
-  socket.on("user-speech", async ({ sessionId, transcript }) => {
-    try {
-      const session = await getSession({ sessionId });
-      if (!session) throw new Error("Session not found");
-      const runtime = getRuntime(sessionId);
-      console.log(runtime);
-      if (!runtime) throw new Error("Session runtime missing");
-      const currentQuestion = session.questions[session.currentQuestionIndex];
+  socket.on(
+    "user-speech",
+    async ({ sessionId, transcript, transcriptQuestionId }) => {
+      try {
+        const session = await getSession({ sessionId });
+        if (!session) throw new Error("Session not found");
+        const runtime = getRuntime(sessionId);
+        console.log(runtime);
+        if (!runtime) throw new Error("Session runtime missing");
+        const currentQuestion = session.questions[session.currentQuestionIndex];
 
-      if (!currentQuestion)
-        throw new Error("Current question not found in session");
+        if (!currentQuestion)
+          throw new Error("Current question not found in session");
 
-      const questionId = runtime.currentQuestionId;
-      const questionText = runtime.currentQuestionText;
-      const context = session.history;
-      const result = await handleUserIntent({
-        sessionId,
-        currentQuestion,
-        userInput: transcript,
-        context,
-      });
-      if (result.isCorrect !== undefined) {
-        socket.emit("answer-result", {
-          correct: result.isCorrect,
-          correctAnswer: result.correctAnswer,
-          assistantResponse: result.assistantResponse,
-        });
-        socket.emit("score-update", { score: result.score });
+        const questionId = runtime.currentQuestionId;
+        const questionText = runtime.currentQuestionText;
+        const context = session.history;
 
-        if (result.isCompleted) {
-          socket.emit("session-ended", { score: result.score });
+        if (transcriptQuestionId && transcriptQuestionId !== questionId) {
+          console.log("not the answer to current question");
           return;
         }
-
-        console.log("going to next question", result.nextQuestion.question);
-        const runtime = advanceQuestion(
+        const result = await handleUserIntent({
           sessionId,
-          session.questions,
-          result.nextQuestion.question,
-        );
-        if (!runtime) {
-          socket.emit("session-ended", { score: result.score });
-          return;
-        }
-        socket.emit("next-question", { question: result.nextQuestion });
-        return;
-      }
-
-      if (result.hint) {
-        socket.emit("hint", {
-          hint: result.hint,
-          assistantResponse: result.assistantResponse,
+          currentQuestion,
+          userInput: transcript,
+          context,
         });
-        console.log("executing in server");
-        return;
-      }
-
-      if (result.repeat) {
-        socket.emit("repeat", {
-          assistantResponse: result.assistantResponse,
-          questionText: questionText,
-        });
-        console.log(
-          "Repeating ",
-          result.assistantResponse + "questionText: " + questionText,
-        );
-        return;
-      }
-
-      if (result.skipped) {
-        console.log("skippingg the question", questionId);
-        const skipResult = await skipQuestion({ sessionId, questionId });
-        if (!skipResult.skipped) {
-          socket.emit("skip-failed", {
-            assistantResponse:
-              skipResult.reason === "NO_SKIPS_LEFT"
-                ? "No more skips available"
-                : skipResult.reason === "ALREADY_SKIPPED"
-                  ? "Question already skipped"
-                  : "Cannot skip",
+        console.log("transcript", transcript);
+        if (result.isCorrect !== undefined) {
+          socket.emit("answer-result", {
+            correct: result.isCorrect,
+            correctAnswer: result.correctAnswer,
+            assistantResponse: result.assistantResponse,
           });
+          socket.emit("score-update", { score: result.score });
+
+          if (result.isCompleted) {
+            socket.emit("session-ended", { score: result.score });
+            return;
+          }
+
+          console.log("going to next question", result.nextQuestion.question);
+          const runtime = advanceQuestion(
+            sessionId,
+            session.questions,
+            result.nextQuestion.question,
+          );
+          if (!runtime) {
+            socket.emit("session-ended", { score: result.score });
+            return;
+          }
+          socket.emit("next-question", { question: result.nextQuestion });
           return;
         }
-        const nextQuestion = skipResult.nextQuestion;
-        advanceQuestion(
-          sessionId,
-          session.questions,
-          skipResult?.nextQuestion?.question || null,
-        );
 
-        if (!nextQuestion) {
+        if (result.hint) {
+          socket.emit("hint", {
+            hint: result.hint,
+            assistantResponse: result.assistantResponse,
+          });
+          console.log("executing in server");
+          return;
+        }
+
+        if (result.repeat) {
+          socket.emit("repeat", {
+            assistantResponse: result.assistantResponse,
+            questionText: questionText,
+          });
+          console.log(
+            "Repeating ",
+            result.assistantResponse + "questionText: " + questionText,
+          );
+          return;
+        }
+
+        if (result.skipped) {
+          console.log("skippingg the question", questionId);
+          const skipResult = await skipQuestion({ sessionId, questionId });
+          if (!skipResult.skipped) {
+            socket.emit("skip-failed", {
+              assistantResponse:
+                skipResult.reason === "NO_SKIPS_LEFT"
+                  ? "No more skips available"
+                  : skipResult.reason === "ALREADY_SKIPPED"
+                    ? "Question already skipped"
+                    : "Cannot skip",
+            });
+            return;
+          }
+          const nextQuestion = skipResult.nextQuestion;
+          advanceQuestion(
+            sessionId,
+            session.questions,
+            skipResult?.nextQuestion?.question || null,
+          );
+
+          if (!nextQuestion) {
+            socket.emit("skip", {
+              assistantResponse: "Skipping the final question.",
+              question: null,
+            });
+            socket.emit("session-ended", { score: session.score });
+            return;
+          }
+          console.log("nextQuestion", nextQuestion);
           socket.emit("skip", {
-            assistantResponse: "Skipping the final question.",
-            question: null,
+            assistantResponse: "Skipping this question. On to the next one.",
+            question: nextQuestion,
           });
-          socket.emit("session-ended", { score: session.score });
+
           return;
         }
-        console.log("nextQuestion", nextQuestion);
-        socket.emit("skip", {
-          assistantResponse: "Skipping this question. On to the next one.",
-          question: nextQuestion,
-        });
 
-        return;
-      }
-
-      if (result.unknown) {
-        socket.emit("unknown", { assistantResponse: result.assistantResponse });
-        return;
-      }
-
-      if (result.hintExhausted || result.exhausted) {
-        if (result.exhausted) {
-          socket.emit("hint-exhausted", {
-            assistantResponse: "You've exhausted your hints for this question.",
+        if (result.unknown) {
+          socket.emit("unknown", {
+            assistantResponse: result.assistantResponse,
           });
           return;
         }
-        const msg =
-          result.assistantResponse ||
-          "You've exhausted your hints for this question.";
-        socket.emit("hint-exhausted", { assistantResponse: msg });
-        return;
-      }
 
-      if (result.stop) {
-        const msg = result.assistantResponse || "Okay, stopping trivia early.";
-        socket.emit("stop-trivia", { assistantResponse: msg });
-        return;
+        if (result.hintExhausted || result.exhausted) {
+          if (result.exhausted) {
+            socket.emit("hint-exhausted", {
+              assistantResponse:
+                "You've exhausted your hints for this question.",
+            });
+            return;
+          }
+          const msg =
+            result.assistantResponse ||
+            "You've exhausted your hints for this question.";
+          socket.emit("hint-exhausted", { assistantResponse: msg });
+          return;
+        }
+
+        if (result.stop) {
+          const msg =
+            result.assistantResponse || "Okay, stopping trivia early.";
+          socket.emit("stop-trivia", { assistantResponse: msg });
+          return;
+        }
+      } catch (err) {
+        console.error("Decision engine error:", err);
+        socket.emit("error", { message: "Failed to process user speech" });
       }
-    } catch (err) {
-      console.error("Decision engine error:", err);
-      socket.emit("error", { message: "Failed to process user speech" });
-    }
-  });
+    },
+  );
 
   // Manual TTS trigger
   socket.on("tts-start", async ({ text }) => {

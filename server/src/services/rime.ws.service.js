@@ -2,138 +2,6 @@ import WebSocket from "ws";
 
 const activeConnections = new Map();
 
-// export function generateSpeechStream(text, socket) {
-//   const existingWs = activeConnections.get(socket.id);
-//   if (existingWs && existingWs.readyState === WebSocket.OPEN) {
-//     console.log("⚠️ Closing previous TTS connection");
-//     existingWs.close();
-//   }
-
-//   return new Promise((resolve, reject) => {
-//     const ws = new WebSocket(
-//       "wss://users.rime.ai/ws?speaker=astra&modelId=arcana&audioFormat=pcm&samplingRate=24000",
-//       {
-//         headers: {
-//           Authorization: `Bearer ${process.env.RIME_API_KEY}`,
-//         },
-//       },
-//     );
-
-//     activeConnections.set(socket.id, ws);
-
-//     const BUFFER_SIZE = 8000;
-//     let audioBuffer = Buffer.alloc(0);
-//     let isClosed = false;
-//     let silenceTimer = null;
-//     let eosReceived = false; // ✅ Track if EOS was acknowledged
-
-//     function sendChunk(data) {
-//       if (!data || data.length === 0) return;
-//       if (data.length % 2 !== 0) data = data.subarray(0, data.length - 1);
-//       if (data.length === 0) return;
-
-//       socket.emit(
-//         "tts-audio",
-//         data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
-//       );
-//     }
-
-//     function flushAndEnd() {
-//       if (isClosed) return;
-//       isClosed = true;
-
-//       if (silenceTimer) clearTimeout(silenceTimer);
-
-//       if (audioBuffer.length > 0) {
-//         sendChunk(audioBuffer);
-//         audioBuffer = Buffer.alloc(0); // ✅ Clear buffer
-//       }
-
-//       socket.emit("tts-audio-end");
-//       console.log("✅ TTS complete");
-
-//       if (activeConnections.get(socket.id) === ws) {
-//         activeConnections.delete(socket.id);
-//       }
-
-//       try {
-//         ws.close();
-//       } catch {}
-//       resolve();
-//     }
-
-//     ws.on("open", () => {
-//       console.log("🔊 Started TTS");
-//       ws.send(text.trim());
-
-//       // ✅ Increase delay to ensure full text is sent
-//       setTimeout(() => {
-//         ws.send("<EOS>");
-//         console.log("📤 Sent EOS token");
-//       }, 200);
-//     });
-
-//     ws.on("message", (data) => {
-//       if (isClosed) return;
-
-//       // ✅ Check for EOS acknowledgment (some TTS services send this)
-//       if (!Buffer.isBuffer(data)) {
-//         const msg = data.toString();
-//         if (msg.includes("EOS") || msg.includes("end")) {
-//           eosReceived = true;
-//           console.log("🔚 EOS acknowledged by Rime");
-//           // Give a bit more time for final audio
-//           if (silenceTimer) clearTimeout(silenceTimer);
-//           silenceTimer = setTimeout(flushAndEnd, 500);
-//           return;
-//         }
-//         return;
-//       }
-
-//       audioBuffer = Buffer.concat([audioBuffer, data]);
-
-//       while (audioBuffer.length >= BUFFER_SIZE) {
-//         sendChunk(audioBuffer.subarray(0, BUFFER_SIZE));
-//         audioBuffer = audioBuffer.subarray(BUFFER_SIZE);
-//       }
-
-//       if (silenceTimer) clearTimeout(silenceTimer);
-
-//       // ✅ Longer timeout if we haven't received EOS yet
-//       const timeout = eosReceived ? 500 : 800;
-//       silenceTimer = setTimeout(flushAndEnd, timeout);
-//     });
-
-//     ws.on("close", () => {
-//       // ✅ Handle explicit close from Rime
-//       console.log("🔌 Rime closed connection");
-//       flushAndEnd();
-//     });
-
-//     ws.on("error", (err) => {
-//       if (isClosed) return;
-//       isClosed = true;
-
-//       if (silenceTimer) clearTimeout(silenceTimer);
-//       if (activeConnections.get(socket.id) === ws) {
-//         activeConnections.delete(socket.id);
-//       }
-
-//       socket.emit("tts-audio-end");
-//       console.error("❌ TTS error:", err.message);
-//       reject(err);
-//     });
-
-//     // ✅ Longer fallback timeout
-//     setTimeout(() => {
-//       if (!isClosed) {
-//         console.warn("⏱️ TTS timeout - forcing end");
-//         flushAndEnd();
-//       }
-//     }, 45000);
-//   });
-// }
-
 export function generateSpeechStream(text, socket) {
   const existingWs = activeConnections.get(socket.id);
   if (existingWs && existingWs.readyState === WebSocket.OPEN) {
@@ -144,9 +12,20 @@ export function generateSpeechStream(text, socket) {
   return new Promise((resolve, reject) => {
     // ✅ Clean the text before sending to TTS
     const cleanText = text
-      .replace(/[^\x00-\x7F]/g, "") // Remove non-ASCII (emojis, special chars)
-      .replace(/\*+/g, "") // Remove asterisks
-      .replace(/\s+/g, " ") // Normalize whitespace
+      // Normalize fancy dashes → hyphen
+      .replace(/[–—]/g, "-")
+
+      // Normalize smart apostrophes → straight apostrophe
+      .replace(/[’‘]/g, "'")
+
+      // Remove everything except ASCII + hyphen + apostrophe
+      .replace(/[^\x00-\x7F'-]/g, "")
+
+      // Remove markdown artifacts
+      .replace(/\*+/g, "")
+
+      // Normalize whitespace
+      .replace(/\s+/g, " ")
       .trim();
 
     if (!cleanText) {

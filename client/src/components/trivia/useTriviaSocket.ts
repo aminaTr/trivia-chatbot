@@ -14,7 +14,8 @@ export function useTriviaSocket({
   setSessionStatus,
   setAnswerResult,
   speak,
-  stopSpeech,
+  resumeMic,
+  stopMic,
 }: {
   startedRef: React.RefObject<boolean>;
   started: boolean;
@@ -26,8 +27,14 @@ export function useTriviaSocket({
   setHints: Function;
   setSessionStatus: Function;
   setAnswerResult: Function;
-  speak: (text: string) => Promise<void>;
-  stopSpeech: () => void;
+  // speak: (text: string) => Promise<void>;
+  speak: (
+    text: string,
+    onStart?: () => void,
+    onEnd?: () => void,
+  ) => Promise<void>;
+  resumeMic: Function;
+  stopMic: Function;
 }) {
   const questionRef = useRef<Question | null>(question);
   const pendingQuestionRef = useRef<Question | null>(null);
@@ -49,7 +56,12 @@ export function useTriviaSocket({
       setQuestion(question);
       setHints([]);
       setSessionStatus("active");
-      await speak(question.question);
+      // await speak(question.question);
+      speak(
+        question.question,
+        () => stopMic(), // onStart callback
+        () => resumeMic(), // onEnd callback
+      );
     };
 
     const onHint = async ({
@@ -60,7 +72,12 @@ export function useTriviaSocket({
       assistantResponse: string;
     }) => {
       setHints((h: string[]) => [...h, hint]);
-      await speak(assistantResponse + ": " + hint);
+      // await speak(assistantResponse + ": " + hint);
+      await speak(
+        assistantResponse + ": " + hint,
+        () => stopMic(), // onStart callback
+        () => resumeMic(),
+      );
     };
 
     const onSkip = async ({
@@ -80,7 +97,11 @@ export function useTriviaSocket({
         speechText += ` Next question: ${question.question}`;
       }
 
-      await speak(speechText);
+      await speak(
+        speechText,
+        () => stopMic(),
+        () => resumeMic(),
+      );
 
       if (question) {
         setQuestion(question);
@@ -93,25 +114,23 @@ export function useTriviaSocket({
     }: {
       assistantResponse: string;
     }) => {
-      await speak(assistantResponse || "Unable to skip the question.");
+      await speak(
+        assistantResponse || "Unable to skip the question.",
+        () => stopMic(),
+        () => resumeMic(),
+      );
     };
 
-    // const onAnswerResult = async (res: AnswerResult) => {
-    //   setAnswerResult(res);
-
-    //   assistantSpeechDoneRef.current = false;
-    //   await speak(res.assistantResponse);
-
-    //   assistantSpeechDoneRef.current = true;
-
-    //   flushNextQuestion();
-    // };
     const onAnswerResult = async (res: AnswerResult) => {
       setAnswerResult(res);
       answerShownRef.current = true;
 
       assistantSpeechDoneRef.current = false;
-      await speak(res.assistantResponse);
+      await speak(
+        res.assistantResponse,
+        () => stopMic(),
+        () => resumeMic(),
+      );
       assistantSpeechDoneRef.current = true;
 
       flushNextQuestion();
@@ -151,7 +170,11 @@ export function useTriviaSocket({
         setHints([]);
 
         console.log("flushed");
-        await speak(q.question);
+        await speak(
+          q.question,
+          () => stopMic(),
+          () => resumeMic(),
+        );
       }
     };
 
@@ -163,8 +186,13 @@ export function useTriviaSocket({
       startedRef.current = false;
 
       setSessionStatus("completed");
-      await speak(`Trivia completed. Your score is ${score}`);
-      stopSpeech();
+      await speak(
+        `Trivia completed. Your score is ${score}`,
+        () => stopMic(),
+        () => resumeMic(),
+      );
+      stopMic();
+      // stopSpeech();
     };
 
     const handleStopEarly = async ({
@@ -176,8 +204,13 @@ export function useTriviaSocket({
       setSessionStatus("completed");
       setStarted(false);
       startedRef.current = false;
-      await speak(assistantResponse);
-      stopSpeech();
+      await speak(
+        assistantResponse,
+        () => stopMic(),
+        () => resumeMic(),
+      );
+      stopMic();
+      // stopSpeech();
     };
 
     const handleRepeat = async ({
@@ -188,7 +221,11 @@ export function useTriviaSocket({
       questionText: string;
     }) => {
       console.log("repeating", questionText);
-      await speak(assistantResponse + ": " + questionText);
+      await speak(
+        assistantResponse + ": " + questionText,
+        () => stopMic(),
+        () => resumeMic(),
+      );
     };
 
     const handleHintExhausted = async ({
@@ -196,7 +233,11 @@ export function useTriviaSocket({
     }: {
       assistantResponse: string;
     }) => {
-      await speak(assistantResponse);
+      await speak(
+        assistantResponse,
+        () => stopMic(),
+        () => resumeMic(),
+      );
     };
 
     const handleUnknown = async ({
@@ -204,7 +245,11 @@ export function useTriviaSocket({
     }: {
       assistantResponse: string;
     }) => {
-      await speak(assistantResponse);
+      await speak(
+        assistantResponse,
+        () => stopMic(),
+        () => resumeMic(),
+      );
     };
 
     socket.on("session-started", onSessionStarted);

@@ -5,6 +5,7 @@ import { Server } from "socket.io";
 import mongoose from "mongoose";
 
 import triviaSocket from "./sockets/trivia2.socket.js";
+import { registerDeepgramSTT } from "./services/deepgram.service.js";
 // import triviaSocket from "./sockets/trivia.socket.js";
 
 const server = http.createServer(app);
@@ -21,6 +22,7 @@ const io = new Server(server, {
 io.on("connection", (socket) => {
   console.log("Socket connected:", socket.id);
   triviaSocket(socket, io);
+  registerDeepgramSTT(socket);
 
   socket.on("disconnect", () => {
     console.log("Client disconnected:", socket.id);

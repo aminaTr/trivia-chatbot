@@ -1,15 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import socket from "@/api/socket";
 import type { Question } from "@/types/trivia";
-import { useSpeechRecognition } from "react-speech-recognition";
-import SpeechRecognition from "react-speech-recognition";
 import { Button } from "@/components/ui/button";
-
-/* hooks */
 import { useTTS } from "../speech/useTTS";
 import { useTriviaSocket } from "../trivia/useTriviaSocket";
 import { useAutoSubmit } from "../speech/useAutoSubmit";
-import { isSpeaking } from "../speech/speechManager";
 import { Card } from "../ui/card";
 
 export default function TriviaBot({
@@ -38,32 +33,156 @@ export default function TriviaBot({
     correctAnswer: string;
     assistantResponse: string;
   }>(null);
-  /* ---------------- SPEECH ---------------- */
-  const { transcript, resetTranscript } = useSpeechRecognition();
-  const { speak, stopSpeech } = useTTS(socket, resetTranscript);
 
-  //   const [assistantResponse, setAssistantResponse] = useState<string>("");
+  /* ---------------- SPEECH ---------------- */
+  const [transcript, setTranscript] = useState("");
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const { speak } = useTTS(socket, setTranscript);
+  const shouldSubmitRef = useRef(false);
+  const transcriptRef = useRef(transcript);
+
+  useEffect(() => {
+    transcriptRef.current = transcript;
+  }, [transcript]);
+
+  useAutoSubmit({
+    shouldSubmitRef,
+    transcript,
+    resetTranscript: () => setTranscript(""),
+    sessionId,
+    question,
+    sessionStatus,
+  });
+
+  useEffect(() => {
+    const handler = ({
+      text,
+      isFinal,
+      speechFinal,
+    }: {
+      text: string;
+      isFinal: boolean;
+      speechFinal: boolean;
+    }) => {
+      if (!text) return;
+
+      if (isFinal) {
+        setTranscript((prev) => prev + " " + text);
+      }
+
+      if (speechFinal) {
+        shouldSubmitRef.current = true;
+      }
+    };
+
+    socket.on("stt-transcript", handler);
+
+    return () => {
+      socket.off("stt-transcript", handler);
+    };
+  }, []);
+
+  /* ---------------- MIC CONTROLS ---------------- */
+  const startMic = async () => {
+    try {
+      // Restart Deepgram for new question
+      socket.emit("stt-stop");
+      setTimeout(() => {
+        socket.emit("stt-start");
+      }, 500);
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      streamRef.current = stream;
+
+      // Create AudioContext for Linear16 conversion
+      audioContextRef.current = new AudioContext({ sampleRate: 16000 });
+      sourceRef.current =
+        audioContextRef.current.createMediaStreamSource(stream);
+      processorRef.current = audioContextRef.current.createScriptProcessor(
+        4096,
+        1,
+        1,
+      );
+
+      processorRef.current.onaudioprocess = (e) => {
+        const float32Data = e.inputBuffer.getChannelData(0);
+        const int16Data = new Int16Array(float32Data.length);
+
+        // Calculate volume for debugging
+        let sum = 0;
+        for (let i = 0; i < float32Data.length; i++) {
+          sum += Math.abs(float32Data[i]);
+          // Convert Float32 to Int16
+          const s = Math.max(-1, Math.min(1, float32Data[i]));
+          int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+
+        const volume = sum / float32Data.length;
+        if (volume > 0.01) {
+          console.log("🔊 Audio detected! Volume:", volume.toFixed(4));
+        }
+
+        socket.emit("audio-chunk", int16Data.buffer);
+      };
+
+      sourceRef.current.connect(processorRef.current);
+      processorRef.current.connect(audioContextRef.current.destination);
+
+      console.log("🎤 Mic streaming started (Linear16)");
+    } catch (err) {
+      console.error("Mic error:", err);
+    }
+  };
+
+  const stopMic = () => {
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      processorRef.current = null;
+    }
+    if (sourceRef.current) {
+      sourceRef.current.disconnect();
+      sourceRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    console.log("⏸️ Mic stopped");
+  };
+
+  const resumeMic = () => {
+    if (!audioContextRef.current) {
+      startMic();
+    } else if (audioContextRef.current.state === "suspended") {
+      audioContextRef.current.resume();
+      console.log("▶️ Mic resumed");
+    }
+  };
 
   /* ---------------- START ---------------- */
   const startTrivia = () => {
-    if (!SpeechRecognition.browserSupportsSpeechRecognition()) {
-      alert("Speech recognition not supported");
-      return;
-    }
-    console.log("startedRef", startedRef);
-    startedRef.current = true; // immediate
-    setStarted(true); // UI update
+    socket.emit("stt-start");
 
+    startedRef.current = true;
+    setStarted(true);
     setSessionStatus("active");
-    setScore(0);
-    setHints([]);
-    setQuestion(null);
-    setSessionId(null);
-
-    SpeechRecognition.startListening({
-      continuous: true,
-      language: "en-US",
-    });
 
     socket.emit("start-session", { difficulty, category });
   };
@@ -81,19 +200,17 @@ export default function TriviaBot({
     setSessionStatus,
     setAnswerResult,
     speak,
-    stopSpeech,
+    stopMic,
+    resumeMic,
   });
 
-  /* ---------------- AUTO SUBMIT ---------------- */
+  // Cleanup on unmount
   useEffect(() => {
-    return useAutoSubmit({
-      transcript,
-      resetTranscript,
-      sessionId,
-      question,
-      sessionStatus,
-    });
-  }, [transcript, sessionId, question, sessionStatus]);
+    return () => {
+      stopMic();
+      socket.emit("stt-stop");
+    };
+  }, []);
 
   /* ---------------- UI ---------------- */
   if (!started) {
@@ -125,7 +242,7 @@ export default function TriviaBot({
 
       {/* Chat */}
       <div className="flex-1 px-4 py-6 space-y-4 overflow-y-auto">
-        {sessionStatus === "active" && question ? (
+        {(sessionStatus === "active" && question) || answerResult ? (
           <>
             {/* AI Question Bubble */}
             <div className="flex flex-col gap-2">
@@ -169,6 +286,7 @@ export default function TriviaBot({
                 </Button>
               </div>
             </div>
+
             {answerResult && (
               <Card
                 className={`ml-11 flex flex-col gap-2 rounded-3xl 
@@ -231,28 +349,15 @@ export default function TriviaBot({
               </div>
             )}
 
-            {/* Assistant Response bubble */}
-            {/* {assistantResponse && (
-              <div className="flex justify-end gap-3">
-                <div className="bg-primary text-primary-foreground rounded-2xl px-4 py-3 max-w-full sm:max-w-[75%] text-right wrap-break-word">
-                  <p className="text-xs opacity-70 mb-1">You're saying…</p>
-                  {assistantResponse}
-                </div>
-                <div className="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">
-                  You
-                </div>
-              </div>
-            )} */}
-
             {/* Listening indicator */}
-            {!isSpeaking() && (
+            {
               <div className="flex justify-center">
                 <span className="px-4 py-2 rounded-full text-sm bg-primary/10 flex items-center gap-2">
                   <span className="w-2 h-2 bg-primary rounded-full animate-pulse" />
                   Listening…
                 </span>
               </div>
-            )}
+            }
           </>
         ) : (
           <div className="flex flex-col gap-4 items-start">
