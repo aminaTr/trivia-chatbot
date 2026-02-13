@@ -9,6 +9,7 @@ export interface Question {
   category: string;
   difficulty: "easy" | "medium" | "hard";
   hints: Hint[];
+  qNum?: string;
 }
 
 export interface AnswerResult {

@@ -4,7 +4,7 @@ import generateSessionId from "../utils/generateSessionId.js";
 
 export async function startTriviaSession({
   questionCount = 10,
-  skip = 2,
+  skips = 2,
   difficulty,
   category,
 }) {
@@ -34,13 +34,14 @@ export async function startTriviaSession({
       questionId: q._id,
     })),
     history: [],
-    skips: skip,
+    skips: skips,
   });
 
   return {
     sessionId,
-    firstQuestion: questions[0],
+    firstQuestion: { ...questions[0], qNum: 1 },
     questions,
+    skips,
   };
 }
 
@@ -48,12 +49,25 @@ export async function getSession({ sessionId }) {
   const session = await TriviaSession.findOne({ sessionId })
     .populate({
       path: "questions.questionId",
-      select: "-__v",
+      select: "-answer -__v", // hide answer
       options: { lean: true },
     })
     .lean();
 
-  return session;
+  if (!session) return null;
+
+  // Flatten questions array to only have question objects
+  const questions = session.questions.map((qAttempt) => ({
+    ...qAttempt.questionId,
+    skipped: qAttempt.skipped,
+    hintsUsed: qAttempt.hintsUsed,
+  }));
+
+  return {
+    questions,
+    skips: session.skips,
+    skipped: session.skipped,
+  };
 }
 
 export async function stopTriviaEarly({ sessionId }) {

@@ -3,8 +3,9 @@
 /**
  * Map<sessionId, {
  *   currentQuestionIndex: number,
- *   currentQuestionId: string,
- *   currentQuestionText: string
+ *   questions
+ *   skips: number
+ *   skipped: number
  * }>
  */
 const sessionRuntime = new Map();
@@ -12,15 +13,16 @@ const sessionRuntime = new Map();
 /**
  * Initialize runtime state when session starts
  */
-export function initSessionRuntime(sessionId, questions) {
+export function initSessionRuntime(sessionId, questions, skips, skipped = 0) {
   if (!questions?.length) {
     throw new Error("No questions provided to initSessionRuntime");
   }
 
   sessionRuntime.set(sessionId, {
     currentQuestionIndex: 0,
-    currentQuestionId: questions[0]._id.toString(),
-    currentQuestionText: questions[0].question,
+    questions,
+    skips,
+    skipped,
   });
 }
 
@@ -34,22 +36,28 @@ export function getRuntime(sessionId) {
 /**
  * Move to next question
  */
-export function advanceQuestion(sessionId, questions, nextQuestion) {
+export function advanceQuestion(sessionId) {
   const state = sessionRuntime.get(sessionId);
   if (!state) return null;
 
+  const totalQuestions = state.questions.length;
+  const effectiveTotal = totalQuestions - state.skips;
+  const answeredCount = state.currentQuestionIndex + 1 - state.skipped;
   const nextIndex = state.currentQuestionIndex + 1;
 
-  if (nextIndex >= questions.length) {
+  if (answeredCount >= effectiveTotal) {
     sessionRuntime.delete(sessionId);
     return null; // session completed
   }
-
   state.currentQuestionIndex = nextIndex;
-  state.currentQuestionId = questions[nextIndex].questionId._id.toString();
-  state.currentQuestionText = nextQuestion;
 
   return state;
+}
+
+export function skipQuestion(sessionId) {
+  const state = getRuntime(sessionId);
+  state.skipped += 1;
+  return advanceQuestion(sessionId);
 }
 
 /**
@@ -57,4 +65,14 @@ export function advanceQuestion(sessionId, questions, nextQuestion) {
  */
 export function clearRuntime(sessionId) {
   sessionRuntime.delete(sessionId);
+}
+
+export function getCurrentQuestionId(sessionId) {
+  const state = getRuntime(sessionId);
+  return state.questions[state.currentQuestionIndex]._id.toString();
+}
+
+export function getCurrentQuestionText(sessionId) {
+  const state = getRuntime(sessionId);
+  return state.questions[state.currentQuestionIndex].question;
 }

@@ -1,5 +1,6 @@
 import { submitAnswer } from "./answer.service.js";
 import { checkHint, getHint } from "./hint.service.js";
+import { getQuestion } from "./question.service.js";
 import { stopTriviaEarly } from "./session.service.js";
 import Groq from "groq-sdk";
 
@@ -15,23 +16,24 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
  */
 export async function handleUserIntent({
   sessionId,
-  currentQuestion,
+  questionId,
   userInput,
   context,
 }) {
+  const currentQuestion = await getQuestion(questionId);
   const hint = await checkHint({
     sessionId,
-    questionId: currentQuestion.questionId._id,
+    questionId,
   });
   // Build LLM prompt to detect intent
   const intentPrompt = `
 You are a trivia voice assistant.
 
 CURRENT QUESTION:
-"${currentQuestion.questionId.question}"
+"${currentQuestion.question}"
 
 CORRECT ANSWER:
-"${currentQuestion.questionId.acceptedAnswers.join(", ")}"
+"${currentQuestion.acceptedAnswers.join(", ")}"
 
 USER SAID:
 "${userInput}"
@@ -90,7 +92,7 @@ Respond as:
     case "ANSWER":
       return await submitAnswer({
         sessionId,
-        questionId: currentQuestion.questionId._id,
+        questionId,
         answer: userInput,
       });
 
@@ -98,7 +100,7 @@ Respond as:
       return {
         ...(await getHint({
           sessionId,
-          questionId: currentQuestion.questionId._id,
+          questionId,
         })),
         assistantResponse: llmResponse?.assistantResponse,
       };

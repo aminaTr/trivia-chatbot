@@ -40,14 +40,14 @@ import type { Question } from "@/types/trivia";
 
 export function useAutoSubmit({
   shouldSubmitRef,
-  transcript,
+  transcriptRef,
   resetTranscript,
   sessionId,
   question,
   sessionStatus,
 }: {
   shouldSubmitRef: React.RefObject<boolean>;
-  transcript: string;
+  transcriptRef: React.RefObject<string>;
   resetTranscript: () => void;
   sessionId: string | null;
   question: Question | null;
@@ -58,7 +58,7 @@ export function useAutoSubmit({
   useEffect(() => {
     if (
       !shouldSubmitRef.current ||
-      !transcript ||
+      !transcriptRef.current.trim() ||
       !sessionId ||
       !question ||
       sessionStatus !== "active"
@@ -71,13 +71,13 @@ export function useAutoSubmit({
 
     // Wait 1.5s before auto-submitting
     timeoutRef.current = setTimeout(() => {
-      console.log("transcript", transcript);
+      console.log("transcript", transcriptRef.current);
       socket.emit("user-speech", {
         sessionId,
-        transcript,
+        transcript: transcriptRef.current,
         transcriptQuestionId: question?._id,
       });
-      resetTranscript();
+      transcriptRef.current = "";
       // stopMic();
       // Reset the trigger
       shouldSubmitRef.current = false;
@@ -88,7 +88,7 @@ export function useAutoSubmit({
     };
   }, [
     shouldSubmitRef,
-    transcript,
+    transcriptRef,
     sessionId,
     question,
     sessionStatus,

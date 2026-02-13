@@ -185,7 +185,6 @@
 // }
 
 import { useRef, useState } from "react";
-// import { startSpeaking, stopSpeaking } from "./speechManager";
 import {
   playChunk,
   resetAudioTiming,
@@ -196,6 +195,7 @@ import {
 export function useTTS(socket: any, resetTranscript: Function) {
   const queueRef = useRef<(() => Promise<void>)[]>([]);
   const isProcessingRef = useRef(false);
+  const isSpeakingRef = useRef(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   async function processQueue() {
@@ -214,14 +214,17 @@ export function useTTS(socket: any, resetTranscript: Function) {
     return new Promise<void>((resolve) => {
       const task = async () => {
         // startSpeaking();
+        isSpeakingRef.current = true;
         setIsSpeaking(true);
         onStart?.(); // Pause mic
 
         setOnPlaybackEnded(() => {
           console.log("🎧 Playback fully completed");
           // stopSpeech(); // safe to restart mic
-          onEnd?.(); // Resume mic
+          isSpeakingRef.current = false;
           setIsSpeaking(false);
+          console.log("executed is speaking", isSpeaking);
+          onEnd?.(); // Resume mic
         });
 
         socket.off("tts-audio");
@@ -267,5 +270,5 @@ export function useTTS(socket: any, resetTranscript: Function) {
     // stopSpeaking(resetTranscript);
   }
 
-  return { speak, isSpeaking, stopSpeech };
+  return { speak, isSpeakingRef, isSpeaking, stopSpeech };
 }

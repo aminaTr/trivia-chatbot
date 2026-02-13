@@ -4,9 +4,8 @@ import http from "http";
 import { Server } from "socket.io";
 import mongoose from "mongoose";
 
-import triviaSocket from "./sockets/trivia2.socket.js";
-import { registerDeepgramSTT } from "./services/deepgram.service.js";
-// import triviaSocket from "./sockets/trivia.socket.js";
+import triviaSocket from "./sockets/trivia.socket.js"; // using socket for tts
+import { registerDeepgramSTT } from "./sockets/deepgram.socket.js";
 
 const server = http.createServer(app);
 const port = process.env.PORT || 5000;

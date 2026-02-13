@@ -10,19 +10,30 @@ export function generateSpeechStream(text, socket) {
   }
 
   return new Promise((resolve, reject) => {
-    // ✅ Clean the text before sending to TTS
     const cleanText = text
-      // Normalize fancy dashes → hyphen
-      .replace(/[–—]/g, "-")
+      // Normalize unicode punctuation
+      .replace(/[–—]/g, "-") // long dashes → hyphen
+      .replace(/[’‘]/g, "'") // smart apostrophes
+      .replace(/[“”]/g, '"') // smart quotes
 
-      // Normalize smart apostrophes → straight apostrophe
-      .replace(/[’‘]/g, "'")
+      // Remove emojis
+      .replace(/\p{Extended_Pictographic}/gu, "")
 
-      // Remove everything except ASCII + hyphen + apostrophe
-      .replace(/[^\x00-\x7F'-]/g, "")
+      .replace(/\bUSA\b/g, "U S A")
+      .replace(/\bUK\b/g, "U K")
 
       // Remove markdown artifacts
       .replace(/\*+/g, "")
+      .replace(/`+/g, "")
+
+      // Remove double or triple dashes → single dash
+      .replace(/-{2,}/g, "-")
+
+      // OPTIONAL: remove dash if surrounded by spaces (usually stylistic)
+      .replace(/\s-\s/g, " ")
+
+      // Remove non-printable control characters
+      .replace(/[\x00-\x1F\x7F]/g, "")
 
       // Normalize whitespace
       .replace(/\s+/g, " ")

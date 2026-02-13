@@ -13,6 +13,8 @@ export function useTriviaSocket({
   setHints,
   setSessionStatus,
   setAnswerResult,
+  setActionLock,
+  transcriptRef,
   speak,
   resumeMic,
   stopMic,
@@ -28,6 +30,8 @@ export function useTriviaSocket({
   setSessionStatus: Function;
   setAnswerResult: Function;
   // speak: (text: string) => Promise<void>;
+  setActionLock: Function;
+  transcriptRef: React.RefObject<string>;
   speak: (
     text: string,
     onStart?: () => void,
@@ -40,6 +44,9 @@ export function useTriviaSocket({
   const pendingQuestionRef = useRef<Question | null>(null);
   const assistantSpeechDoneRef = useRef(false);
   const answerShownRef = useRef(false);
+  const clearAnswerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   useEffect(() => {
     questionRef.current = question;
@@ -53,8 +60,11 @@ export function useTriviaSocket({
       setSessionId(sessionId);
       setStarted(true);
       startedRef.current = true;
+      transcriptRef.current = "";
       setQuestion(question);
       setHints([]);
+      setScore(0);
+      setAnswerResult(null);
       setSessionStatus("active");
       // await speak(question.question);
       speak(
@@ -78,6 +88,7 @@ export function useTriviaSocket({
         () => stopMic(), // onStart callback
         () => resumeMic(),
       );
+      setActionLock(false);
     };
 
     const onSkip = async ({
@@ -102,6 +113,7 @@ export function useTriviaSocket({
         () => stopMic(),
         () => resumeMic(),
       );
+      setActionLock(false);
 
       if (question) {
         setQuestion(question);
@@ -119,6 +131,7 @@ export function useTriviaSocket({
         () => stopMic(),
         () => resumeMic(),
       );
+      setActionLock(false);
     };
 
     const onAnswerResult = async (res: AnswerResult) => {
@@ -131,28 +144,22 @@ export function useTriviaSocket({
         () => stopMic(),
         () => resumeMic(),
       );
+      setActionLock(false);
+
       assistantSpeechDoneRef.current = true;
 
       flushNextQuestion();
     };
 
-    const onNextQuestion = ({ question }: { question: Question }) => {
-      console.log("new question received", question);
-      pendingQuestionRef.current = question;
-
-      // flushNextQuestion();
-    };
-    // const flushNextQuestion = async () => {
-    //   if (assistantSpeechDoneRef.current && pendingQuestionRef.current) {
-    //     const q = pendingQuestionRef.current;
-    //     pendingQuestionRef.current = null;
-    //     assistantSpeechDoneRef.current = false;
-    //     setQuestion(q);
-    //     setHints([]);
-    //     console.log("flushed");
-    //     await speak(q.question);
-    //   }
+    // const onNextQuestion = ({ question }: { question: Question }) => {
+    //   console.log("new question received", question);
+    //   pendingQuestionRef.current = question;
     // };
+    const onNextQuestion = ({ question }: { question: Question }) => {
+      pendingQuestionRef.current = question;
+      flushNextQuestion();
+    };
+
     const flushNextQuestion = async () => {
       if (
         assistantSpeechDoneRef.current &&
@@ -165,10 +172,22 @@ export function useTriviaSocket({
         assistantSpeechDoneRef.current = false;
         answerShownRef.current = false;
 
-        setAnswerResult(null); // hide previous result
+        // setAnswerResult(null); // hide previous result
+        // 🧠 Clear any previous timer
+        if (clearAnswerTimeoutRef.current) {
+          clearTimeout(clearAnswerTimeoutRef.current);
+          clearAnswerTimeoutRef.current = null;
+        }
+
+        // ⏳ Delay hiding previous answer
+        clearAnswerTimeoutRef.current = setTimeout(() => {
+          setAnswerResult(null);
+          clearAnswerTimeoutRef.current = null;
+        }, 800); // ← tune: 500–1200ms feels natural
+
         setQuestion(q);
         setHints([]);
-
+        transcriptRef.current = "";
         console.log("flushed");
         await speak(
           q.question,
@@ -189,9 +208,9 @@ export function useTriviaSocket({
       await speak(
         `Trivia completed. Your score is ${score}`,
         () => stopMic(),
-        () => resumeMic(),
+        () => setAnswerResult(null),
       );
-      stopMic();
+      socket.emit("stt-stop");
       // stopSpeech();
     };
 
@@ -207,9 +226,10 @@ export function useTriviaSocket({
       await speak(
         assistantResponse,
         () => stopMic(),
-        () => resumeMic(),
+        () => setAnswerResult(null),
       );
-      stopMic();
+      socket.emit("stt-stop");
+
       // stopSpeech();
     };
 
@@ -226,6 +246,7 @@ export function useTriviaSocket({
         () => stopMic(),
         () => resumeMic(),
       );
+      setActionLock(false);
     };
 
     const handleHintExhausted = async ({
@@ -238,6 +259,7 @@ export function useTriviaSocket({
         () => stopMic(),
         () => resumeMic(),
       );
+      setActionLock(false);
     };
 
     const handleUnknown = async ({
@@ -251,7 +273,10 @@ export function useTriviaSocket({
         () => resumeMic(),
       );
     };
-
+    const handleRestart = () => {
+      console.log("restart");
+      socket.emit("stt-start");
+    };
     socket.on("session-started", onSessionStarted);
     socket.on("hint", onHint);
     socket.on("skip", onSkip);
@@ -264,6 +289,7 @@ export function useTriviaSocket({
     socket.on("hint-exhausted", handleHintExhausted);
     socket.on("repeat", handleRepeat);
     socket.on("unknown", handleUnknown);
+    socket.on("stt-restart", handleRestart);
 
     return () => {
       socket.off("session-started", onSessionStarted);
@@ -278,6 +304,7 @@ export function useTriviaSocket({
       socket.off("hint-exhausted", handleHintExhausted);
       socket.off("repeat", handleRepeat);
       socket.off("unknown", handleUnknown);
+      socket.off("stt-restart", handleRestart);
     };
   }, [started]);
 }
