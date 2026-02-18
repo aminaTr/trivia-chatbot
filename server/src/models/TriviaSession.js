@@ -46,6 +46,13 @@ const triviaSessionSchema = new Schema(
     //   ref: "User",
     //   required: true,
     // },
+    difficulty: {
+      type: String,
+      enum: ["easy", "medium", "hard"],
+    },
+    category: {
+      type: String,
+    },
     score: {
       type: Number,
       default: 0,

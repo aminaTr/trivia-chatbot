@@ -2,7 +2,7 @@ import WebSocket from "ws";
 
 const activeConnections = new Map();
 
-export function generateSpeechStream(text, socket) {
+export function generateSpeechStream(text, socket, selectedVoice = "astra") {
   const existingWs = activeConnections.get(socket.id);
   if (existingWs && existingWs.readyState === WebSocket.OPEN) {
     console.log("⚠️ Closing previous TTS connection");
@@ -11,33 +11,45 @@ export function generateSpeechStream(text, socket) {
 
   return new Promise((resolve, reject) => {
     const cleanText = text
-      // Normalize unicode punctuation
-      .replace(/[–—]/g, "-") // long dashes → hyphen
-      .replace(/[’‘]/g, "'") // smart apostrophes
-      .replace(/[“”]/g, '"') // smart quotes
-
-      // Remove emojis
-      .replace(/\p{Extended_Pictographic}/gu, "")
-
-      .replace(/\bUSA\b/g, "U S A")
-      .replace(/\bUK\b/g, "U K")
-
+      // Normalize fancy dashes → hyphen
+      .replace(/[–—]/g, "-")
+      // Normalize smart apostrophes → straight apostrophe
+      .replace(/[’‘]/g, "'")
+      // Remove everything except ASCII + hyphen + apostrophe
+      .replace(/[^\x00-\x7F'-]/g, "")
       // Remove markdown artifacts
       .replace(/\*+/g, "")
-      .replace(/`+/g, "")
-
-      // Remove double or triple dashes → single dash
-      .replace(/-{2,}/g, "-")
-
-      // OPTIONAL: remove dash if surrounded by spaces (usually stylistic)
-      .replace(/\s-\s/g, " ")
-
-      // Remove non-printable control characters
-      .replace(/[\x00-\x1F\x7F]/g, "")
-
       // Normalize whitespace
       .replace(/\s+/g, " ")
       .trim();
+
+    // // Normalize unicode punctuation
+    // .replace(/[–—]/g, "-") // long dashes → hyphen
+    // .replace(/[’‘]/g, "'") // smart apostrophes
+    // .replace(/[“”]/g, '"') // smart quotes
+
+    // // Remove emojis
+    // .replace(/\p{Extended_Pictographic}/gu, "")
+
+    // .replace(/\bUSA\b/g, "U S A")
+    // .replace(/\bUK\b/g, "U K")
+
+    // // Remove markdown artifacts
+    // .replace(/\*+/g, "")
+    // .replace(/`+/g, "")
+
+    // // Remove double or triple dashes → single dash
+    // .replace(/-{2,}/g, "-")
+
+    // // OPTIONAL: remove dash if surrounded by spaces (usually stylistic)
+    // .replace(/\s-\s/g, " ")
+
+    // // Remove non-printable control characters
+    // .replace(/[\x00-\x1F\x7F]/g, "")
+
+    // // Normalize whitespace
+    // .replace(/\s+/g, " ")
+    // .trim();
 
     if (!cleanText) {
       console.warn("⚠️ Empty text after cleaning, skipping TTS");
@@ -50,7 +62,7 @@ export function generateSpeechStream(text, socket) {
     console.log("🧹 Cleaned:", cleanText);
 
     const ws = new WebSocket(
-      "wss://users.rime.ai/ws?speaker=astra&modelId=arcana&audioFormat=pcm&samplingRate=24000",
+      `wss://users.rime.ai/ws?speaker=${selectedVoice ? selectedVoice : "astra"}&modelId=arcana&audioFormat=pcm&samplingRate=24000`,
       {
         headers: {
           Authorization: `Bearer ${process.env.RIME_API_KEY}`,

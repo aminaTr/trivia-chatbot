@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import socket from "@/api/socket";
 import type { AnswerResult, Question } from "@/types/trivia";
 import { useRef } from "react";
+
 export function useTriviaSocket({
   startedRef,
   started,
@@ -9,6 +10,7 @@ export function useTriviaSocket({
   setSessionId,
   question,
   setQuestion,
+  activeQuestionIdRef,
   setScore,
   setHints,
   setSessionStatus,
@@ -25,11 +27,11 @@ export function useTriviaSocket({
   setSessionId: Function;
   question: Question | null;
   setQuestion: Function;
+  activeQuestionIdRef: React.RefObject<string>;
   setScore: Function;
   setHints: Function;
   setSessionStatus: Function;
   setAnswerResult: Function;
-  // speak: (text: string) => Promise<void>;
   setActionLock: Function;
   transcriptRef: React.RefObject<string>;
   speak: (
@@ -50,11 +52,6 @@ export function useTriviaSocket({
 
   useEffect(() => {
     questionRef.current = question;
-    setHints([]);
-  }, [question]);
-
-  useEffect(() => {
-    if (!started) return;
 
     const onSessionStarted = async ({ sessionId, question }: any) => {
       setSessionId(sessionId);
@@ -62,6 +59,7 @@ export function useTriviaSocket({
       startedRef.current = true;
       transcriptRef.current = "";
       setQuestion(question);
+      activeQuestionIdRef.current = question._id;
       setHints([]);
       setScore(0);
       setAnswerResult(null);
@@ -116,7 +114,9 @@ export function useTriviaSocket({
       setActionLock(false);
 
       if (question) {
+        activeQuestionIdRef.current = question._id;
         setQuestion(question);
+
         setHints([]);
       }
     };
@@ -172,7 +172,6 @@ export function useTriviaSocket({
         assistantSpeechDoneRef.current = false;
         answerShownRef.current = false;
 
-        // setAnswerResult(null); // hide previous result
         // 🧠 Clear any previous timer
         if (clearAnswerTimeoutRef.current) {
           clearTimeout(clearAnswerTimeoutRef.current);
@@ -185,6 +184,7 @@ export function useTriviaSocket({
           clearAnswerTimeoutRef.current = null;
         }, 800); // ← tune: 500–1200ms feels natural
 
+        activeQuestionIdRef.current = q._id;
         setQuestion(q);
         setHints([]);
         transcriptRef.current = "";
@@ -211,7 +211,6 @@ export function useTriviaSocket({
         () => setAnswerResult(null),
       );
       socket.emit("stt-stop");
-      // stopSpeech();
     };
 
     const handleStopEarly = async ({
@@ -229,8 +228,8 @@ export function useTriviaSocket({
         () => setAnswerResult(null),
       );
       socket.emit("stt-stop");
-
-      // stopSpeech();
+      // const summary = await fetchSummary({ sessionId });
+      // setTriviaSummary(summary); // Store in state
     };
 
     const handleRepeat = async ({

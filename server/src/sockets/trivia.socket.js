@@ -8,6 +8,7 @@ import {
 import {
   initSessionRuntime,
   getRuntime,
+  skipQuestionRuntime,
   advanceQuestion,
   clearRuntime,
   getCurrentQuestionId,
@@ -16,6 +17,9 @@ import {
 import { skipQuestion } from "../services/skip.service.js";
 
 const ttsQueues = new Map();
+const submissionCooldowns = new Map(); // sessionId -> { questionId, timestamp }
+let selectedVoice = "astra";
+const COOLDOWN_MS = 2000; // 2 seconds cooldown per question
 
 function enqueueTTS(socket, fn, text) {
   const queue = ttsQueues.get(socket.id) || {
@@ -42,24 +46,37 @@ function streamAndSpeak(socket, text) {
     socket,
     async () => {
       console.log("enqueue TTS:", text);
-
-      await generateSpeechStream(text, socket);
+      console.log("selectedVoice", selectedVoice);
+      await generateSpeechStream(text, socket, selectedVoice);
     },
     text,
   );
 }
 
 async function rebuildRuntimeFromSession(sessionId) {
+  console.log("Rebuilding runtime");
   const session = (await getSession({ sessionId })) || {};
-  const { questions = [], skips = 0, skipped = 0 } = session;
+  const {
+    questions = [],
+    skips = 0,
+    skipped = 0,
+    currentQuestionIndex = 0,
+  } = session;
   if (!questions) console.error("Invalid session id");
-  initSessionRuntime(sessionId, questions, skips, skipped);
+  initSessionRuntime(
+    sessionId,
+    questions,
+    skips,
+    skipped,
+    currentQuestionIndex,
+  );
   return getRuntime(sessionId);
 }
 
 export default function triviaSocket(socket, io) {
-  socket.on("start-session", async ({ difficulty, category }) => {
+  socket.on("start-session", async ({ difficulty, category, voice }) => {
     try {
+      selectedVoice = voice;
       const { sessionId, firstQuestion, questions, skips } =
         await startTriviaSession({
           questionCount: 12,
@@ -68,7 +85,7 @@ export default function triviaSocket(socket, io) {
           category,
         });
       initSessionRuntime(sessionId, questions, skips, 0);
-
+      console.log(selectedVoice, "on start session");
       socket.join(sessionId);
       socket.emit("session-started", { sessionId, question: firstQuestion });
     } catch (error) {
@@ -94,9 +111,39 @@ export default function triviaSocket(socket, io) {
 
         // const context = session.history;
         console.log(questionId);
+        // ✅ Check if transcript is for the wrong question
         if (transcriptQuestionId && transcriptQuestionId !== questionId) {
-          console.log("Not the answer to current question");
+          console.log(
+            "Not the answer to current question",
+            transcriptQuestionId,
+            questionId,
+          );
           return;
+        }
+
+        // ✅ CHECK COOLDOWN - prevent rapid duplicate submissions
+        const cooldownKey = `${sessionId}-${questionId}`;
+        const lastSubmission = submissionCooldowns.get(cooldownKey);
+        const now = Date.now();
+
+        if (lastSubmission && now - lastSubmission < COOLDOWN_MS) {
+          console.log(
+            `🛑 Cooldown active: Ignoring duplicate submission for ${questionId} (${now - lastSubmission}ms ago)`,
+          );
+          return;
+        }
+
+        // ✅ SET COOLDOWN
+        submissionCooldowns.set(cooldownKey, now);
+
+        // Clean up old cooldowns (optional, prevents memory leak)
+        if (submissionCooldowns.size > 1000) {
+          const entries = Array.from(submissionCooldowns.entries());
+          entries.sort((a, b) => b[1] - a[1]);
+          submissionCooldowns.clear();
+          entries
+            .slice(0, 500)
+            .forEach(([k, v]) => submissionCooldowns.set(k, v));
         }
         const result = await handleUserIntent({
           sessionId,
@@ -104,8 +151,13 @@ export default function triviaSocket(socket, io) {
           userInput: transcript,
           // context,
         });
+        console.log("handleuserintent returned", result.assistantResponse);
         console.log("transcript", transcript);
+
         if (result.isCorrect !== undefined) {
+          // ✅ CLEAR COOLDOWN when moving to next question
+          submissionCooldowns.delete(cooldownKey);
+
           socket.emit("answer-result", {
             correct: result.isCorrect,
             correctAnswer: result.correctAnswer,
@@ -165,7 +217,7 @@ export default function triviaSocket(socket, io) {
             return;
           }
           const nextQuestion = skipResult.nextQuestion;
-          runtime = advanceQuestion(sessionId);
+          runtime = skipQuestionRuntime(sessionId);
 
           if (!nextQuestion) {
             socket.emit("skip", {
@@ -175,11 +227,13 @@ export default function triviaSocket(socket, io) {
             socket.emit("session-ended", { score: session.score });
             return;
           }
+          // ✅ CLEAR COOLDOWN when moving to next question
+          submissionCooldowns.delete(cooldownKey);
+          console.log("runtime:", runtime);
           console.log("nextQuestion", nextQuestion);
           socket.emit("skip", {
-            assistantResponse: "Skipping this question. On to the next one.",
+            assistantResponse: "Skipping this question. ",
             question: nextQuestion,
-            qNum: runtime.currentQuestionIndex + 1,
           });
 
           return;

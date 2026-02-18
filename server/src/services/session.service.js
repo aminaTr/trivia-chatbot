@@ -35,6 +35,8 @@ export async function startTriviaSession({
     })),
     history: [],
     skips: skips,
+    difficulty,
+    category,
   });
 
   return {
@@ -67,6 +69,7 @@ export async function getSession({ sessionId }) {
     questions,
     skips: session.skips,
     skipped: session.skipped,
+    currentQuestionIndex: session.currentQuestionIndex,
   };
 }
 

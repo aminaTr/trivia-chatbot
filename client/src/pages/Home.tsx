@@ -6,12 +6,12 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
+  DialogDescription,
   DialogTitle,
   DialogTrigger,
   DialogClose,
 } from "@/components/ui/dialog";
 
-// import TriviaBot from "./TriviaBot";
 import TriviaBot from "@/components/trivia/TriviaBot";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -23,14 +23,28 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { getCategories } from "@/api/home";
+import socket from "@/api/socket";
+import { useMicSetup } from "@/components/trivia/MicSetup";
+import { startTrivia } from "@/components/trivia/StartTrivia";
+import { SidebarNav } from "@/components/trivia/SidebarNav";
 
 const Home = () => {
-  // const [started, setStarted] = useState(false);
   const startedRef = useRef(false);
   const [started, setStarted] = useState(false);
   const [difficulty, setDifficulty] = useState("easy");
   const [category, setCategory] = useState("");
   const [categories, setCategories] = useState<string[]>([]);
+  const isListeningRef = useRef<boolean>(false);
+  const [sessionStatus, setSessionStatus] = useState<
+    "idle" | "active" | "completed"
+  >("idle");
+  const [categoryOpen, setCategoryOpen] = useState(false);
+  const [difficultyOpen, setDifficultyOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const [voice, setVoice] = useState("astra");
+
+  const { startMic, stopMic, resumeMic } = useMicSetup(isListeningRef, socket);
 
   useEffect(() => {
     // Reset started state when difficulty or category changes
@@ -83,27 +97,27 @@ const Home = () => {
       <div className="flex flex-1 relative">
         {/* ---------- SIDEBAR NAV ---------- */}
         <aside className="sticky w-64 border-r p-4 hidden md:block">
-          <nav className="space-y-2">
-            <h2 className="text-sm font-semibold text-muted-foreground mb-2">
-              Navigation
-            </h2>
-
-            <Button variant="ghost" className="w-full justify-start">
-              🧠 Start Trivia
-            </Button>
-            <Button variant="ghost" className="w-full justify-start">
-              📚 Categories
-            </Button>
-            <Button variant="ghost" className="w-full justify-start">
-              🎚 Difficulty
-            </Button>
-            <Button variant="ghost" className="w-full justify-start">
-              🏆 Leaderboard
-            </Button>
-            <Button variant="ghost" className="w-full justify-start">
-              ⚙️ Settings
-            </Button>
-          </nav>
+          <SidebarNav
+            started={started}
+            startedRef={startedRef}
+            startTrivia={startTrivia}
+            startMic={startMic}
+            setStarted={setStarted}
+            setSessionStatus={setSessionStatus}
+            category={category}
+            setCategory={setCategory}
+            difficulty={difficulty}
+            setDifficulty={setDifficulty}
+            voice={voice}
+            setVoice={setVoice}
+            categories={categories}
+            categoryOpen={categoryOpen}
+            setCategoryOpen={setCategoryOpen}
+            difficultyOpen={difficultyOpen}
+            setDifficultyOpen={setDifficultyOpen}
+            settingsOpen={settingsOpen}
+            setSettingsOpen={setSettingsOpen}
+          />
         </aside>
 
         {/* ---------- MAIN CONTENT ---------- */}
@@ -116,27 +130,38 @@ const Home = () => {
                   ☰ Menu
                 </Button>
               </DialogTrigger>
-              <DialogContent className="w-64 p-4">
+
+              <DialogContent className="w-72 p-4">
                 <DialogHeader>
                   <DialogTitle>Navigation</DialogTitle>
+                  <DialogDescription>
+                    Choose trivia settings and start your session.
+                  </DialogDescription>
                 </DialogHeader>
-                <nav className="flex flex-col space-y-2 mt-4">
-                  <Button variant="ghost" className="w-full justify-start">
-                    🧠 Start Trivia
-                  </Button>
-                  <Button variant="ghost" className="w-full justify-start">
-                    📚 Categories
-                  </Button>
-                  <Button variant="ghost" className="w-full justify-start">
-                    🎚 Difficulty
-                  </Button>
-                  <Button variant="ghost" className="w-full justify-start">
-                    🏆 Leaderboard
-                  </Button>
-                  <Button variant="ghost" className="w-full justify-start">
-                    ⚙️ Settings
-                  </Button>
-                </nav>
+
+                <div className="mt-4">
+                  <SidebarNav
+                    started={started}
+                    startedRef={startedRef}
+                    startTrivia={startTrivia}
+                    startMic={startMic}
+                    setStarted={setStarted}
+                    setSessionStatus={setSessionStatus}
+                    category={category}
+                    setCategory={setCategory}
+                    difficulty={difficulty}
+                    setDifficulty={setDifficulty}
+                    voice={voice}
+                    setVoice={setVoice}
+                    categories={categories}
+                    categoryOpen={categoryOpen}
+                    setCategoryOpen={setCategoryOpen}
+                    difficultyOpen={difficultyOpen}
+                    setDifficultyOpen={setDifficultyOpen}
+                    settingsOpen={settingsOpen}
+                    setSettingsOpen={setSettingsOpen}
+                  />
+                </div>
 
                 <DialogClose asChild>
                   <Button variant="outline" className="mt-4 w-full">
@@ -147,9 +172,10 @@ const Home = () => {
             </Dialog>
           </div>
 
-          <div
+          {/* <div
             className={`grid grid-cols-1 ${started ? "lg:grid-cols-2" : "lg:grid-cols-3"} gap-3 h-full`}
-          >
+          > */}
+          <div className={`grid grid-cols-1 lg:grid-cols-2 gap-3 h-full`}>
             {/* ======= TRIVIA CHAT CONTAINER (MIDDLE) ======= */}
             <div className="lg:col-span-2 flex flex-col">
               <Card className="flex-1 p-4">
@@ -218,13 +244,20 @@ const Home = () => {
                     setStarted={setStarted}
                     difficulty={difficulty}
                     category={category}
+                    voice={voice}
+                    startMic={startMic}
+                    stopMic={stopMic}
+                    resumeMic={resumeMic}
+                    sessionStatus={sessionStatus}
+                    setSessionStatus={setSessionStatus}
+                    isListeningRef={isListeningRef}
                   />
                 </div>
               </Card>
             </div>
 
             {/* Left / Info Section */}
-            <div className={`lg:col-span-1 space-y-4 ${started && "hidden"}`}>
+            {/* <div className={`lg:col-span-1 space-y-4 hidden}`}>
               <Card className="p-4">
                 <h3 className="font-semibold mb-2">How it works</h3>
                 <p className="text-sm text-muted-foreground">
@@ -239,7 +272,7 @@ const Home = () => {
                   Login to track score, history, and streaks.
                 </p>
               </Card>
-            </div>
+            </div> */}
           </div>
         </main>
       </div>

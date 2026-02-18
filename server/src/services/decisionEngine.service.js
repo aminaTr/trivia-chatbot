@@ -86,7 +86,7 @@ Respond as:
     console.error("LLM intent parsing failed:", err);
     llmResponse = { intent: "UNKNOWN", answer: null };
   }
-
+  console.log("llmResponse.intent", llmResponse.intent);
   // Execute service based on intent
   switch (llmResponse.intent) {
     case "ANSWER":
@@ -139,8 +139,7 @@ Respond as:
     default:
       return {
         unknown: true,
-        assistantResponse:
-          llmResponse?.assistantResponse || "Sorry, I didn't understand that.",
+        assistantResponse: "Sorry, I didn't understand that.",
       };
   }
 }

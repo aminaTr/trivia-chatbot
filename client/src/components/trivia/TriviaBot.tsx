@@ -4,31 +4,45 @@ import type { Question } from "@/types/trivia";
 import { Button } from "@/components/ui/button";
 import { useTTS } from "../speech/useTTS";
 import { useTriviaSocket } from "../trivia/useTriviaSocket";
-import { useAutoSubmit } from "../speech/useAutoSubmit";
+import { PlayTriviaButton } from "./PlayTriviaButton";
+import TriviaResults from "./TriviaResults";
 import { Card } from "../ui/card";
 import { toast } from "sonner";
-
+import { startTrivia } from "./StartTrivia";
 export default function TriviaBot({
   startedRef,
   started,
   setStarted,
   difficulty,
   category,
+  voice,
+  startMic,
+  stopMic,
+  resumeMic,
+  sessionStatus,
+  setSessionStatus,
+  isListeningRef,
 }: {
   startedRef: React.RefObject<boolean>;
   started: boolean;
   setStarted: React.Dispatch<React.SetStateAction<boolean>>;
   difficulty: string;
   category: string;
+  voice: string;
+  startMic: Function;
+  stopMic: Function;
+  resumeMic: Function;
+  sessionStatus: string;
+  setSessionStatus: Function;
+  isListeningRef: React.RefObject<boolean>;
 }) {
   /* ---------------- STATE ---------------- */
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [question, setQuestion] = useState<Question | null>(null);
+  const activeQuestionIdRef = useRef<string>("");
+
   const [score, setScore] = useState(0);
   const [hints, setHints] = useState<string[]>([]);
-  const [sessionStatus, setSessionStatus] = useState<
-    "idle" | "active" | "completed"
-  >("idle");
   const [answerResult, setAnswerResult] = useState<null | {
     correct: boolean;
     correctAnswer: string;
@@ -37,12 +51,8 @@ export default function TriviaBot({
 
   /* ---------------- SPEECH ---------------- */
   const [transcript, setTranscript] = useState("");
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const workletRef = useRef<AudioWorkletNode | null>(null);
-
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const cooldownRef = useRef<Record<string, number>>({});
+  const frontendCooldownRef = useRef<number>(0);
 
   function canPerform(action: string, cooldownMs: number) {
     const now = Date.now();
@@ -59,10 +69,8 @@ export default function TriviaBot({
   const { speak, isSpeaking } = useTTS(socket, setTranscript);
   const isTTSBlocking = isSpeaking;
   const [actionLock, setActionLock] = useState(false);
-
   const actionsDisabled = isTTSBlocking || actionLock;
 
-  const shouldSubmitRef = useRef(false);
   const transcriptRef = useRef<string>(transcript);
   type UserCommand = "repeat" | "hint" | "skip" | "stop";
   const ACTION_COOLDOWN: Record<UserCommand, number> = {
@@ -76,14 +84,13 @@ export default function TriviaBot({
     transcriptRef.current = transcript;
   }, [transcript]);
 
-  useAutoSubmit({
-    shouldSubmitRef,
-    transcriptRef,
-    resetTranscript: () => (transcriptRef.current = ""),
-    sessionId,
-    question,
-    sessionStatus,
-  });
+  useEffect(() => {
+    // ✅ Clear transcript when question changes
+    transcriptRef.current = "";
+    setTranscript("");
+
+    console.log(`🔄 Question changed to: ${question?._id}`);
+  }, [question?._id]);
 
   useEffect(() => {
     const handler = ({
@@ -95,29 +102,47 @@ export default function TriviaBot({
       isFinal: boolean;
       speechFinal: boolean;
     }) => {
+      if (!isListeningRef.current) return;
       if (!text?.trim()) return;
+      if (!activeQuestionIdRef.current) return;
+      // CHECK cooldown in frontend
+      const lastCooldown = frontendCooldownRef.current || 0;
+      const now = Date.now();
+      if (now - lastCooldown < 5000)
+        return console.log("Returning due to cooldown");
 
+      // Append only final chunks
       if (isFinal) {
-        transcriptRef.current += " " + text;
-        setTranscript(transcriptRef.current);
+        transcriptRef.current = (transcriptRef.current + " " + text).trim();
+        console.log("added to transcript", transcriptRef.current);
       }
 
       if (speechFinal) {
-        console.log("speech Final");
+        frontendCooldownRef.current = now;
+
         const finalText = transcriptRef.current.trim();
 
-        if (finalText.length > 2) {
-          // socket.emit("user-speech", {
-          //   sessionId,
-          //   questionId: question?._id,
-          //   transcript: finalText,
-          // });
+        if (finalText.length <= 2) return console.log("length less than 2");
+        if (!sessionId || !question || sessionStatus !== "active")
+          return console.log(
+            sessionId,
+            question,
+            activeQuestionIdRef,
+            sessionStatus,
+          );
 
-          // transcriptRef.current = "";
-          // setTranscript("");
-          shouldSubmitRef.current = true;
-        }
-        console.log("submitted");
+        console.log(
+          `🎯 Submitting for Q:${activeQuestionIdRef.current}: "${finalText}"`,
+        );
+
+        socket.emit("user-speech", {
+          sessionId,
+          transcript: finalText,
+          transcriptQuestionId: activeQuestionIdRef.current,
+        });
+
+        transcriptRef.current = "";
+        setTranscript("");
       }
     };
 
@@ -125,84 +150,8 @@ export default function TriviaBot({
     return () => {
       socket.off("stt-transcript", handler);
     };
-  }, [sessionId, question]);
+  }, [sessionId]);
 
-  /* ---------------- MIC CONTROLS ---------------- */
-  const startMic = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: 16000,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-
-      streamRef.current = stream;
-
-      audioContextRef.current = new AudioContext({ sampleRate: 16000 });
-
-      await audioContextRef.current.audioWorklet.addModule("/pcm-processor.js");
-
-      sourceRef.current =
-        audioContextRef.current.createMediaStreamSource(stream);
-
-      workletRef.current = new AudioWorkletNode(
-        audioContextRef.current,
-        "pcm-processor",
-      );
-
-      workletRef.current.port.onmessage = (e) => {
-        const pcm = new Int16Array(e.data);
-
-        socket.emit("audio-chunk", pcm.buffer);
-      };
-
-      sourceRef.current.connect(workletRef.current);
-      workletRef.current.connect(audioContextRef.current.destination);
-
-      console.log("🎤 Mic streaming started (AudioWorklet)");
-    } catch (err) {
-      console.error("Mic error:", err);
-    }
-  };
-  const stopMic = () => {
-    workletRef.current?.disconnect();
-    workletRef.current = null;
-
-    sourceRef.current?.disconnect();
-    sourceRef.current = null;
-
-    audioContextRef.current?.close();
-    audioContextRef.current = null;
-
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-
-    console.log("⏸️ Mic stopped");
-  };
-  const resumeMic = () => {
-    if (!audioContextRef.current) {
-      startMic();
-    } else if (audioContextRef.current.state === "suspended") {
-      audioContextRef.current.resume();
-      console.log("▶️ Mic resumed");
-    }
-  };
-
-  /* ---------------- START ---------------- */
-  const startTrivia = async () => {
-    await startMic(); // start browser audio FIRST
-    socket.emit("stt-start"); // then tell server
-
-    startedRef.current = true;
-    setStarted(true);
-    setSessionStatus("active");
-
-    socket.emit("start-session", { difficulty, category });
-  };
   /* ---------------- SOCKET ---------------- */
   useTriviaSocket({
     startedRef,
@@ -211,13 +160,13 @@ export default function TriviaBot({
     setSessionId,
     question,
     setQuestion,
+    activeQuestionIdRef,
     setScore,
     setHints,
     setSessionStatus,
     setAnswerResult,
     setActionLock,
     transcriptRef,
-
     speak,
     stopMic,
     resumeMic,
@@ -256,23 +205,25 @@ export default function TriviaBot({
   };
 
   /* ---------------- UI ---------------- */
-  const PlayTriviaButton = ({ text }: { text: string }) => {
-    return (
-      <Button
-        variant="outline"
-        className="px-6 py-2 rounded-full"
-        onClick={startTrivia}
-        disabled={!category}
-      >
-        {!category ? "🔃 Loading...." : `▶️ ${text} `}
-      </Button>
-    );
-  };
 
   if (!started && sessionStatus !== "completed") {
     return (
       <div className="flex h-52 justify-center items-center">
-        <PlayTriviaButton text="Start Playing The Trivia" />
+        <PlayTriviaButton
+          text="Start Playing The Trivia"
+          category={category}
+          onClick={() =>
+            startTrivia(
+              startMic,
+              startedRef,
+              setStarted,
+              setSessionStatus,
+              difficulty,
+              category,
+              voice,
+            )
+          }
+        />
       </div>
     );
   }
@@ -282,18 +233,18 @@ export default function TriviaBot({
   }
 
   return (
-    <div className="flex flex-col h-screen">
-      {/* Top bar */}
-      <div className="sticky top-0 z-10 px-4 py-3 flex justify-end border-b bg-background/90 backdrop-blur">
-        <span className="font-semibold text-sm text-primary">
-          Score: {score}
-        </span>
-      </div>
+    <div className="flex flex-col h-max">
+      {(sessionStatus === "active" && question) || answerResult ? (
+        <>
+          {/* Top bar */}
+          <div className="sticky top-0 z-10 px-4 py-3 flex justify-end border-b bg-background/90 backdrop-blur">
+            <span className="font-semibold text-sm text-primary">
+              Score: {score}
+            </span>
+          </div>
 
-      {/* Chat */}
-      <div className="flex-1 px-4 py-6 space-y-4 overflow-y-auto">
-        {(sessionStatus === "active" && question) || answerResult ? (
-          <>
+          {/* Chat */}
+          <div className="flex-1 px-4 py-6 space-y-4 overflow-y-auto">
             {/* AI Question Bubble */}
             <div className="flex flex-col gap-2">
               <div className="flex gap-3 items-start">
@@ -322,6 +273,7 @@ export default function TriviaBot({
               >
                 <Button
                   variant="outline"
+                  className="text-xs"
                   size="sm"
                   onClick={() => sendAction("repeat")}
                 >
@@ -330,6 +282,7 @@ export default function TriviaBot({
 
                 <Button
                   variant="outline"
+                  className="text-xs"
                   size="sm"
                   onClick={() => sendAction("hint")}
                 >
@@ -338,6 +291,7 @@ export default function TriviaBot({
 
                 <Button
                   variant="outline"
+                  className="text-xs"
                   size="sm"
                   onClick={() => sendAction("skip")}
                 >
@@ -346,6 +300,7 @@ export default function TriviaBot({
 
                 <Button
                   variant="outline"
+                  className="text-xs"
                   size="sm"
                   onClick={() => sendAction("stop")}
                 >
@@ -364,14 +319,14 @@ export default function TriviaBot({
                       : "border-red-500/40 bg-red-400/20"
                   }`}
               >
-                <div className={`rounded-lg px-3 py-1 text-sm wrap-break-word`}>
-                  {answerResult?.correct ? "✅ Correct!" : "❌ Incorrect."} The
-                  correct answer {answerResult?.correct ? "is indeed" : "was"} :{" "}
+                <div className={`rounded-lg px-3 py-1  wrap-break-word`}>
+                  {answerResult?.correct ? "🎉 Correct!" : "❌ Incorrect."} The
+                  correct answer {answerResult?.correct ? "is indeed" : "was"}{" "}
                   <span className="font-bold">
                     {answerResult?.correctAnswer}
                   </span>
                 </div>
-                <div
+                {/* <div
                   className={`rounded-lg px-3 py-1 text-sm wrap-break-word
                    ${
                      answerResult?.correct
@@ -380,7 +335,7 @@ export default function TriviaBot({
                    }`}
                 >
                   🤖 Assistant: {answerResult?.assistantResponse}
-                </div>
+                </div> */}
               </Card>
             )}
 
@@ -403,7 +358,7 @@ export default function TriviaBot({
               </Card>
             )}
 
-            {/* User speech bubble */}
+            {/* User speech bubble
             {transcriptRef?.current && (
               <div className="flex justify-end gap-3">
                 <div className="bg-primary text-primary-foreground rounded-2xl px-4 py-3 max-w-full sm:max-w-[75%] text-right wrap-break-word">
@@ -414,7 +369,7 @@ export default function TriviaBot({
                   You
                 </div>
               </div>
-            )}
+            )} */}
 
             {/* Listening indicator */}
             {!isSpeaking && (
@@ -425,34 +380,28 @@ export default function TriviaBot({
                 </span>
               </div>
             )}
-          </>
-        ) : (
-          <div className="flex flex-col gap-4 items-start">
-            {/* AI Completion Bubble */}
-            <div className="flex gap-3 w-full max-w-md sm:max-w-lg">
-              <div className="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold ">
-                AI
-              </div>
-              <div className="bg-primary/10 dark:bg-primary/20 rounded-2xl px-4 py-4 flex-1 wrap-break-word">
-                <p className="text-lg font-semibold mb-2">
-                  🎉 Trivia Completed!
-                </p>
-                <p>
-                  Final score:{" "}
-                  <span className="font-bold text-2xl text-primary">
-                    {score}
-                  </span>
-                </p>
-              </div>
-            </div>
-
-            {/* Start Trivia Button */}
-            <div className="ml-11">
-              <PlayTriviaButton text="Start The Trivia Again" />
-            </div>
           </div>
-        )}
-      </div>
+        </>
+      ) : (
+        <>
+          <div className="flex  ">
+            {/* Button below results */}
+            {/* <div className="ml-11">
+                <PlayTriviaButton
+                  text="Start Playing The Trivia"
+                  category={category}
+                  onClick={startTrivia}
+                />
+              </div> */}
+            {/* Results Component */}
+            <TriviaResults sessionId={sessionId} score={score} />
+            {/* Start Trivia Button */}
+            {/* <div className="ml-11">
+              <PlayTriviaButton text="Start The Trivia Again" />
+            </div> */}
+          </div>
+        </>
+      )}{" "}
     </div>
   );
 }

@@ -25,7 +25,7 @@ export async function evaluateAnswerGroq(
       .join("\n");
 
     const prompt = `
-You are a trivia assistant who grades answers in a fun and natural way.
+You are a trivia assistant for a voice based trivia game who grades answers in a fun and natural way.
 You have the following session context:
 ${contextText}
 
@@ -36,9 +36,10 @@ Correct Answer: "${correctAnswer}"
 User Answer: "${userAnswer}"
 
 Rules:
+- Keep in mind it is a voice based game so if user answer sounds similar to right answer, it is preferable to mark right.
 - Ignore capitalization, minor typos, or punctuation.
 - Consider synonyms or variations.
-- Provide a quirky, fun response to the user with intonation so rime ai can provide better tts.
+- Provide a quirky, fun response to the user with intonation so rime ai can provide better tts but keep it less than 30 words.
 - Respond in STRICT JSON:
   { "isCorrect": true, "assistantResponse": "quirky assistant reply" } 
   or 

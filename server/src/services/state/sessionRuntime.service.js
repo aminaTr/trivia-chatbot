@@ -13,13 +13,19 @@ const sessionRuntime = new Map();
 /**
  * Initialize runtime state when session starts
  */
-export function initSessionRuntime(sessionId, questions, skips, skipped = 0) {
+export function initSessionRuntime(
+  sessionId,
+  questions,
+  skips,
+  skipped = 0,
+  currentQuestionIndex = 0,
+) {
   if (!questions?.length) {
     throw new Error("No questions provided to initSessionRuntime");
   }
 
   sessionRuntime.set(sessionId, {
-    currentQuestionIndex: 0,
+    currentQuestionIndex,
     questions,
     skips,
     skipped,
@@ -44,7 +50,18 @@ export function advanceQuestion(sessionId) {
   const effectiveTotal = totalQuestions - state.skips;
   const answeredCount = state.currentQuestionIndex + 1 - state.skipped;
   const nextIndex = state.currentQuestionIndex + 1;
-
+  console.log(
+    "totalQuestions",
+    totalQuestions,
+    "effectiveTotal",
+    effectiveTotal,
+    "answeredCount",
+    answeredCount,
+    "nextIndex",
+    nextIndex,
+    "skipped",
+    state.skipped,
+  );
   if (answeredCount >= effectiveTotal) {
     sessionRuntime.delete(sessionId);
     return null; // session completed
@@ -54,7 +71,7 @@ export function advanceQuestion(sessionId) {
   return state;
 }
 
-export function skipQuestion(sessionId) {
+export function skipQuestionRuntime(sessionId) {
   const state = getRuntime(sessionId);
   state.skipped += 1;
   return advanceQuestion(sessionId);

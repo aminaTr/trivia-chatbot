@@ -11,6 +11,8 @@ const audioQueues = new Map();
 // socket.id → keep alive queue
 const keepAliveIntervals = new Map();
 
+const speechFinalCooldowns = new Map(); // socketId → timestamp <string, number>
+
 const FRAME_MS = 64; // 1024 samples @ 16kHz
 
 /* ---------------- REAL-TIME PACER (GLOBAL, ONCE) ---------------- */
@@ -49,6 +51,8 @@ export function registerDeepgramSTT(socket) {
       interim_results: true,
       punctuate: true,
       smart_format: true,
+      vad_events: true,
+      endpointing: 200,
     });
 
     dgConnections.set(socket.id, connection);
@@ -69,14 +73,39 @@ export function registerDeepgramSTT(socket) {
     });
 
     connection.on(LiveTranscriptionEvents.Transcript, (data) => {
-      const transcript = data.channel?.alternatives?.[0]?.transcript;
-      if (!transcript?.trim()) return;
+      const transcript = data.channel?.alternatives?.[0]?.transcript?.trim();
+      if (!transcript) return;
+
+      const now = Date.now();
+      const lastCooldown = speechFinalCooldowns.get(socket.id) || 0;
+      const COOLDOWN_MS = 5000; // adjust as needed
+
+      // If we're in cooldown after last speech_final, ignore this chunk
+      if (now - lastCooldown < COOLDOWN_MS) {
+        console.log("❌ Ignoring chunk due to cooldown", transcript);
+        return;
+      } else {
+        console.log(
+          "now - lastCooldown < COOLDOWN_MS",
+          now,
+          lastCooldown,
+          transcript,
+        );
+      }
+
+      console.log("data.speech_final", data.speech_final);
 
       socket.emit("stt-transcript", {
         text: transcript,
         isFinal: data.is_final ?? false,
         speechFinal: data.speech_final ?? false,
       });
+
+      if (data.speech_final) {
+        socket.emit("user-finished-speaking");
+        // start cooldown
+        speechFinalCooldowns.set(socket.id, now);
+      }
     });
 
     connection.on(LiveTranscriptionEvents.Metadata, (data) => {
@@ -100,7 +129,7 @@ export function registerDeepgramSTT(socket) {
       keepAliveIntervals.delete(socket.id);
 
       // AUTO RESTART
-      socket.emit("stt-restart");
+      // socket.emit("stt-restart");
     });
 
     connection.on(LiveTranscriptionEvents.UtteranceEnd, () => {
