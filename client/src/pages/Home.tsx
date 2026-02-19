@@ -146,7 +146,7 @@ const Home = () => {
       {/* ================= MAIN BODY ================= */}
       <div className="flex flex-1 relative">
         {/* ---------- SIDEBAR NAV ---------- */}
-        <aside className="sticky top-15 h-96 w-64 border-r p-4 hidden md:block">
+        <aside className="sticky top-15 max-h-10/12 w-64 border-r p-4 hidden overflow-y-scroll md:block">
           <SidebarNav
             started={started}
             startedRef={startedRef}
