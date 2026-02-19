@@ -53,7 +53,8 @@ export async function skipQuestion({ sessionId, questionId }) {
 
   const nextQuestion = {
     ...newQuestion,
-    qNum: session.currentQuestionIndex + 1,
+    qNum: session.currentQuestionIndex ? session.currentQuestionIndex + 1 : 0,
+    score: session.score,
   };
   session.history.push({
     questionId,

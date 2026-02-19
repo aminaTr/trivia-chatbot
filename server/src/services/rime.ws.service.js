@@ -12,9 +12,19 @@ export function generateSpeechStream(text, socket, selectedVoice = "astra") {
   return new Promise((resolve, reject) => {
     const cleanText = text
       // Normalize fancy dashes → hyphen
-      .replace(/[–—]/g, "-")
+      .replace(/[–—]/g, " ")
       // Normalize smart apostrophes → straight apostrophe
       .replace(/[’‘]/g, "'")
+      // // Remove double or triple dashes → empty space
+      .replace(/\bUS\b/g, "U S")
+
+      .replace(/\bUSA\b/g, "U S A")
+      .replace(/\bU.S.A\b/g, "U S A")
+
+      .replace(/\bUK\b/g, "U K")
+      .replace(/\bU.K\b/g, "U K")
+
+      .replace(/-{2,}/g, " ")
       // Remove everything except ASCII + hyphen + apostrophe
       .replace(/[^\x00-\x7F'-]/g, "")
       // Remove markdown artifacts
@@ -38,9 +48,6 @@ export function generateSpeechStream(text, socket, selectedVoice = "astra") {
     // .replace(/\*+/g, "")
     // .replace(/`+/g, "")
 
-    // // Remove double or triple dashes → single dash
-    // .replace(/-{2,}/g, "-")
-
     // // OPTIONAL: remove dash if surrounded by spaces (usually stylistic)
     // .replace(/\s-\s/g, " ")
 
@@ -62,7 +69,7 @@ export function generateSpeechStream(text, socket, selectedVoice = "astra") {
     console.log("🧹 Cleaned:", cleanText);
 
     const ws = new WebSocket(
-      `wss://users.rime.ai/ws?speaker=${selectedVoice ? selectedVoice : "astra"}&modelId=arcana&audioFormat=pcm&samplingRate=24000`,
+      `wss://users.rime.ai/ws?speaker=${selectedVoice ? selectedVoice : "astra"}&modelId=arcana&audioFormat=pcm&samplingRate=48000`,
       {
         headers: {
           Authorization: `Bearer ${process.env.RIME_API_KEY}`,

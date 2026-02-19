@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+// import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -75,28 +75,78 @@ const Home = () => {
   return (
     <div className="min-h-screen flex flex-col">
       {/* ================= TOP NAVBAR ================= */}
-      <header className="w-full border-b bg-background">
+      <header className="w-full sticky top-0 z-50 border-b bg-background">
         <div className="flex items-center justify-between px-6 py-4">
           <h1 className="text-xl font-semibold tracking-tight">
             🎯 Trivia Chatbot
           </h1>
-
+          {/* ===== Filters ===== */}
+          <div className="md:flex w-fit flex-col sm:flex-row sm:gap-3 gap-2 hidden ">
+            {/* Difficulty */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:w-1/2 gap-2">
+              <Label className="whitespace-nowrap text-sm sm:text-base truncate">
+                Difficulty
+              </Label>
+              <Select
+                value={difficulty}
+                onValueChange={setDifficulty}
+                disabled={started}
+              >
+                <SelectTrigger className="w-full sm:flex-1 text-sm">
+                  <SelectValue placeholder="Select difficulty" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="easy">Easy</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="hard">Hard</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {/* Category */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <Label
+                htmlFor="category"
+                className="whitespace-nowrap text-sm sm:text-base"
+              >
+                Category
+              </Label>
+              <Select
+                value={category}
+                onValueChange={setCategory}
+                disabled={started}
+              >
+                <SelectTrigger className="w-50 text-sm">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent className="max-w-75">
+                  {categories.map((cat, index) => (
+                    <SelectItem
+                      key={`${cat}-${index}`}
+                      value={cat}
+                      className="whitespace-normal wrap-break-word"
+                    >
+                      {cat}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>{" "}
+          </div>
           {/* Profile / Auth placeholder */}
-          <div className="flex items-center gap-3">
-            {/* Replace with auth logic later */}
+          {/* <div className="flex items-center gap-3">
             <Button variant="outline">Login</Button>
 
             <Avatar>
               <AvatarFallback>U</AvatarFallback>
             </Avatar>
-          </div>
+          </div> */}
         </div>
       </header>
 
       {/* ================= MAIN BODY ================= */}
       <div className="flex flex-1 relative">
         {/* ---------- SIDEBAR NAV ---------- */}
-        <aside className="sticky w-64 border-r p-4 hidden md:block">
+        <aside className="sticky top-15 h-96 w-64 border-r p-4 hidden md:block">
           <SidebarNav
             started={started}
             startedRef={startedRef}
@@ -182,7 +232,7 @@ const Home = () => {
                 <h2 className="text-lg font-semibold  ">Trivia Chat</h2>
 
                 {/* ===== Filters ===== */}
-                <div className="flex flex-col sm:flex-row sm:gap-3 gap-2">
+                <div className="flex flex-col sm:flex-row sm:gap-3 gap-2 md:hidden">
                   {/* Difficulty */}
                   <div className="flex flex-col sm:flex-row sm:items-center sm:w-1/2 gap-2">
                     <Label className="whitespace-nowrap text-sm sm:text-base truncate">

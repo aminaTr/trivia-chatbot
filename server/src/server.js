@@ -3,6 +3,7 @@ import app from "./app.js";
 import http from "http";
 import { Server } from "socket.io";
 import mongoose from "mongoose";
+import { voiceState } from "./services/state/voice.server.state.js";
 
 import triviaSocket from "./sockets/trivia.socket.js"; // using socket for tts
 import { registerDeepgramSTT } from "./sockets/deepgram.socket.js";
@@ -22,6 +23,7 @@ io.on("connection", (socket) => {
   console.log("Socket connected:", socket.id);
   triviaSocket(socket, io);
   registerDeepgramSTT(socket);
+  voiceState.set(socket.id, "LISTENING");
 
   socket.on("disconnect", () => {
     console.log("Client disconnected:", socket.id);

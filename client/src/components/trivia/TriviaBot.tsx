@@ -40,6 +40,7 @@ export default function TriviaBot({
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [question, setQuestion] = useState<Question | null>(null);
   const activeQuestionIdRef = useRef<string>("");
+  const isSubmittingRef = useRef(false);
 
   const [score, setScore] = useState(0);
   const [hints, setHints] = useState<string[]>([]);
@@ -52,7 +53,6 @@ export default function TriviaBot({
   /* ---------------- SPEECH ---------------- */
   const [transcript, setTranscript] = useState("");
   const cooldownRef = useRef<Record<string, number>>({});
-  const frontendCooldownRef = useRef<number>(0);
 
   function canPerform(action: string, cooldownMs: number) {
     const now = Date.now();
@@ -85,14 +85,6 @@ export default function TriviaBot({
   }, [transcript]);
 
   useEffect(() => {
-    // ✅ Clear transcript when question changes
-    transcriptRef.current = "";
-    setTranscript("");
-
-    console.log(`🔄 Question changed to: ${question?._id}`);
-  }, [question?._id]);
-
-  useEffect(() => {
     const handler = ({
       text,
       isFinal,
@@ -103,13 +95,10 @@ export default function TriviaBot({
       speechFinal: boolean;
     }) => {
       if (!isListeningRef.current) return;
+      if (isSubmittingRef.current) return; // 🔒 hard gate
+
       if (!text?.trim()) return;
       if (!activeQuestionIdRef.current) return;
-      // CHECK cooldown in frontend
-      const lastCooldown = frontendCooldownRef.current || 0;
-      const now = Date.now();
-      if (now - lastCooldown < 5000)
-        return console.log("Returning due to cooldown");
 
       // Append only final chunks
       if (isFinal) {
@@ -118,11 +107,12 @@ export default function TriviaBot({
       }
 
       if (speechFinal) {
-        frontendCooldownRef.current = now;
-
         const finalText = transcriptRef.current.trim();
 
-        if (finalText.length <= 2) return console.log("length less than 2");
+        if (finalText.length <= 2) {
+          console.log("length less than 2");
+          return socket.emit("voice-ready");
+        }
         if (!sessionId || !question || sessionStatus !== "active")
           return console.log(
             sessionId,
@@ -134,11 +124,17 @@ export default function TriviaBot({
         console.log(
           `🎯 Submitting for Q:${activeQuestionIdRef.current}: "${finalText}"`,
         );
+        // 🔒 lock immediately
+        isSubmittingRef.current = true;
+
+        // 🎤 stop mic immediately
+        stopMic();
 
         socket.emit("user-speech", {
           sessionId,
           transcript: finalText,
           transcriptQuestionId: activeQuestionIdRef.current,
+          type: "speech",
         });
 
         transcriptRef.current = "";
@@ -170,6 +166,7 @@ export default function TriviaBot({
     speak,
     stopMic,
     resumeMic,
+    isSubmittingRef,
   });
 
   // Cleanup on unmount
@@ -196,6 +193,7 @@ export default function TriviaBot({
       sessionId,
       questionId: question._id,
       transcript: command,
+      type: "command",
     });
 
     // lock only for actions that expect speech back

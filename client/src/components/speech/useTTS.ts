@@ -197,6 +197,7 @@ export function useTTS(socket: any, resetTranscript: Function) {
   const isProcessingRef = useRef(false);
   const isSpeakingRef = useRef(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const activeStreamIdRef = useRef(0);
 
   async function processQueue() {
     if (isProcessingRef.current) return;
@@ -213,34 +214,38 @@ export function useTTS(socket: any, resetTranscript: Function) {
   function speak(text: string, onStart?: () => void, onEnd?: () => void) {
     return new Promise<void>((resolve) => {
       const task = async () => {
-        // startSpeaking();
-        isSpeakingRef.current = true;
-        setIsSpeaking(true);
-        onStart?.(); // Pause mic
-
-        setOnPlaybackEnded(() => {
-          console.log("🎧 Playback fully completed");
-          // stopSpeech(); // safe to restart mic
-          isSpeakingRef.current = false;
-          setIsSpeaking(false);
-          console.log("executed is speaking", isSpeaking);
-          onEnd?.(); // Resume mic
-        });
+        const streamId = Date.now();
+        activeStreamIdRef.current = streamId;
 
         socket.off("tts-audio");
         socket.off("tts-audio-end");
 
+        isSpeakingRef.current = true;
+        setIsSpeaking(true);
+
+        onStart?.();
+
+        setOnPlaybackEnded(() => {
+          if (activeStreamIdRef.current !== streamId) return;
+
+          isSpeakingRef.current = false;
+          setIsSpeaking(false);
+          onEnd?.();
+        });
+
         socket.on("tts-audio", async (chunk: ArrayBuffer) => {
+          if (activeStreamIdRef.current !== streamId) return;
           await playChunk(chunk);
         });
 
         socket.on("tts-audio-end", () => {
-          console.log("📡 Server finished sending audio");
-          markTTSStreamEnded(); // ✅ THIS is the correct bridge
-          resolve(); // queue can move on, audio may still be playing
+          if (activeStreamIdRef.current !== streamId) return;
+
+          markTTSStreamEnded();
+          resolve();
         });
 
-        socket.emit("tts-start", { text });
+        socket.emit("tts-start", { text, streamId });
       };
 
       queueRef.current.push(task);
@@ -251,24 +256,76 @@ export function useTTS(socket: any, resetTranscript: Function) {
   function stopSpeech() {
     console.log("⏹️ Stopping speech");
 
-    // Clear queue
-    queueRef.current = [];
+    activeStreamIdRef.current = 0; // invalidate stream
 
-    // Remove listeners
+    queueRef.current = [];
     socket.off("tts-audio");
     socket.off("tts-audio-end");
 
-    // Close audio
-    // closeAudioContext();
-    resetAudioTiming();
-
-    // Tell server to stop
     socket.emit("tts-stop");
 
-    // Update UI state
+    resetAudioTiming();
     resetTranscript("");
-    // stopSpeaking(resetTranscript);
   }
 
   return { speak, isSpeakingRef, isSpeaking, stopSpeech };
 }
+// function speak(text: string, onStart?: () => void, onEnd?: () => void) {
+//   return new Promise<void>((resolve) => {
+//     const task = async () => {
+//       socket.off("tts-audio");
+//       socket.off("tts-audio-end");
+
+//       // startSpeaking();
+//       isSpeakingRef.current = true;
+//       setIsSpeaking(true);
+
+//       onStart?.(); // Pause mic
+
+//       setOnPlaybackEnded(() => {
+//         console.log("🎧 Playback fully completed");
+//         // stopSpeech(); // safe to restart mic
+//         isSpeakingRef.current = false;
+//         setIsSpeaking(false);
+//         console.log("executed is speaking", isSpeaking);
+//         onEnd?.(); // Resume mic
+//       });
+
+//       socket.on("tts-audio", async (chunk: ArrayBuffer) => {
+//         await playChunk(chunk);
+//       });
+
+//       socket.on("tts-audio-end", () => {
+//         console.log("📡 Server finished sending audio");
+//         markTTSStreamEnded(); // ✅ THIS is the correct bridge
+//         resolve(); // queue can move on, audio may still be playing
+//       });
+
+//       socket.emit("tts-start", { text });
+//     };
+
+//     queueRef.current.push(task);
+//     processQueue();
+//   });
+// }
+// function stopSpeech() {
+//   console.log("⏹️ Stopping speech");
+
+//   // Clear queue
+//   queueRef.current = [];
+
+//   // Remove listeners
+//   socket.off("tts-audio");
+//   socket.off("tts-audio-end");
+
+//   // Close audio
+//   // closeAudioContext();
+//   resetAudioTiming();
+
+//   // Tell server to stop
+//   socket.emit("tts-stop");
+
+//   // Update UI state
+//   resetTranscript("");
+//   // stopSpeaking(resetTranscript);
+// }

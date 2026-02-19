@@ -1,5 +1,5 @@
 import { createClient, LiveTranscriptionEvents } from "@deepgram/sdk";
-
+import { voiceState } from "../services/state/voice.server.state.js";
 const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 
 // socket.id → deepgram connection
@@ -75,25 +75,33 @@ export function registerDeepgramSTT(socket) {
     connection.on(LiveTranscriptionEvents.Transcript, (data) => {
       const transcript = data.channel?.alternatives?.[0]?.transcript?.trim();
       if (!transcript) return;
+      const socketId = socket.id;
+      const currentState = voiceState.get(socketId);
 
-      const now = Date.now();
-      const lastCooldown = speechFinalCooldowns.get(socket.id) || 0;
-      const COOLDOWN_MS = 5000; // adjust as needed
-
-      // If we're in cooldown after last speech_final, ignore this chunk
-      if (now - lastCooldown < COOLDOWN_MS) {
-        console.log("❌ Ignoring chunk due to cooldown", transcript);
+      // 🚫 Only allow transcripts while LISTENING
+      if (currentState !== "LISTENING") {
+        console.log("❌ Ignored due to state:", currentState, transcript);
         return;
-      } else {
-        console.log(
-          "now - lastCooldown < COOLDOWN_MS",
-          now,
-          lastCooldown,
-          transcript,
-        );
       }
 
-      console.log("data.speech_final", data.speech_final);
+      // const now = Date.now();
+      // const lastCooldown = speechFinalCooldowns.get(socket.id) || 0;
+      // const COOLDOWN_MS = 5000; // adjust as needed
+
+      // // If we're in cooldown after last speech_final, ignore this chunk
+      // if (now - lastCooldown < COOLDOWN_MS) {
+      //   console.log("❌ Ignoring chunk due to cooldown", transcript);
+      //   return;
+      // } else {
+      //   console.log(
+      //     "now - lastCooldown < COOLDOWN_MS",
+      //     now,
+      //     lastCooldown,
+      //     transcript,
+      //   );
+      // }
+
+      // console.log("data.speech_final", data.speech_final);
 
       socket.emit("stt-transcript", {
         text: transcript,
@@ -103,8 +111,11 @@ export function registerDeepgramSTT(socket) {
 
       if (data.speech_final) {
         socket.emit("user-finished-speaking");
+        console.log("🛑 Transition → UTTERANCE_COMPLETE");
+
+        voiceState.set(socketId, "UTTERANCE_COMPLETE");
         // start cooldown
-        speechFinalCooldowns.set(socket.id, now);
+        // speechFinalCooldowns.set(socket.id, now);
       }
     });
 

@@ -20,6 +20,7 @@ export function useTriviaSocket({
   speak,
   resumeMic,
   stopMic,
+  isSubmittingRef,
 }: {
   startedRef: React.RefObject<boolean>;
   started: boolean;
@@ -41,6 +42,7 @@ export function useTriviaSocket({
   ) => Promise<void>;
   resumeMic: Function;
   stopMic: Function;
+  isSubmittingRef: React.RefObject<boolean>;
 }) {
   const questionRef = useRef<Question | null>(question);
   const pendingQuestionRef = useRef<Question | null>(null);
@@ -68,7 +70,11 @@ export function useTriviaSocket({
       speak(
         question.question,
         () => stopMic(), // onStart callback
-        () => resumeMic(), // onEnd callback
+        () => {
+          isSubmittingRef.current = false;
+          resumeMic();
+          socket.emit("voice-ready");
+        }, // onEnd callback
       );
     };
 
@@ -84,7 +90,11 @@ export function useTriviaSocket({
       await speak(
         assistantResponse + ": " + hint,
         () => stopMic(), // onStart callback
-        () => resumeMic(),
+        () => {
+          isSubmittingRef.current = false;
+          resumeMic();
+          socket.emit("voice-ready");
+        }, // onEnd callback
       );
       setActionLock(false);
     };
@@ -109,7 +119,11 @@ export function useTriviaSocket({
       await speak(
         speechText,
         () => stopMic(),
-        () => resumeMic(),
+        () => {
+          isSubmittingRef.current = false;
+          resumeMic();
+          socket.emit("voice-ready");
+        }, // onEnd callback
       );
       setActionLock(false);
 
@@ -129,7 +143,11 @@ export function useTriviaSocket({
       await speak(
         assistantResponse || "Unable to skip the question.",
         () => stopMic(),
-        () => resumeMic(),
+        () => {
+          isSubmittingRef.current = false;
+          resumeMic();
+          socket.emit("voice-ready");
+        }, // onEnd callback
       );
       setActionLock(false);
     };
@@ -142,7 +160,11 @@ export function useTriviaSocket({
       await speak(
         res.assistantResponse,
         () => stopMic(),
-        () => resumeMic(),
+        () => {
+          isSubmittingRef.current = false;
+          resumeMic();
+          socket.emit("voice-ready");
+        }, // onEnd callback
       );
       setActionLock(false);
 
@@ -151,10 +173,6 @@ export function useTriviaSocket({
       flushNextQuestion();
     };
 
-    // const onNextQuestion = ({ question }: { question: Question }) => {
-    //   console.log("new question received", question);
-    //   pendingQuestionRef.current = question;
-    // };
     const onNextQuestion = ({ question }: { question: Question }) => {
       pendingQuestionRef.current = question;
       flushNextQuestion();
@@ -192,7 +210,11 @@ export function useTriviaSocket({
         await speak(
           q.question,
           () => stopMic(),
-          () => resumeMic(),
+          () => {
+            isSubmittingRef.current = false;
+            resumeMic();
+            socket.emit("voice-ready");
+          }, // onEnd callback
         );
       }
     };
@@ -210,6 +232,7 @@ export function useTriviaSocket({
         () => stopMic(),
         () => setAnswerResult(null),
       );
+
       socket.emit("stt-stop");
     };
 
@@ -228,8 +251,6 @@ export function useTriviaSocket({
         () => setAnswerResult(null),
       );
       socket.emit("stt-stop");
-      // const summary = await fetchSummary({ sessionId });
-      // setTriviaSummary(summary); // Store in state
     };
 
     const handleRepeat = async ({
@@ -243,7 +264,11 @@ export function useTriviaSocket({
       await speak(
         assistantResponse + ": " + questionText,
         () => stopMic(),
-        () => resumeMic(),
+        () => {
+          isSubmittingRef.current = false;
+          resumeMic();
+          socket.emit("voice-ready");
+        }, // onEnd callback
       );
       setActionLock(false);
     };
@@ -256,7 +281,11 @@ export function useTriviaSocket({
       await speak(
         assistantResponse,
         () => stopMic(),
-        () => resumeMic(),
+        () => {
+          isSubmittingRef.current = false;
+          resumeMic();
+          socket.emit("voice-ready");
+        }, // onEnd callback
       );
       setActionLock(false);
     };
@@ -269,7 +298,11 @@ export function useTriviaSocket({
       await speak(
         assistantResponse,
         () => stopMic(),
-        () => resumeMic(),
+        () => {
+          isSubmittingRef.current = false;
+          resumeMic();
+          socket.emit("voice-ready");
+        }, // onEnd callback
       );
     };
     const handleRestart = () => {

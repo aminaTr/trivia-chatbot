@@ -86,9 +86,10 @@ export default function TriviaResults({
     );
   }
 
-  const accuracy = Math.round(
-    (summary.correctAnswers / summary.totalQuestions) * 100,
-  );
+  const accuracy =
+    summary.correctAnswers === 0 && summary.totalQuestions === 0
+      ? 0
+      : Math.round((summary.correctAnswers / summary.totalQuestions) * 100);
 
   return (
     <div className="flex gap-3 w-full sm:px-6 ">
@@ -125,51 +126,53 @@ export default function TriviaResults({
         </div>
 
         {/* Question Breakdown */}
-        <div className="border-t border-primary/20 pt-4 mt-4">
-          <p className="font-semibold mb-3">Question Breakdown:</p>
-          <div className="space-y-3 max-h-96 overflow-y-auto">
-            {summary.questions.map((q, idx) => (
-              <div
-                key={idx}
-                className={`p-3 rounded-lg border-l-4 ${
-                  q.skipped
-                    ? "bg-gray-100 dark:bg-gray-800 border-gray-400"
-                    : q.isCorrect
-                      ? "bg-green-50 dark:bg-green-950/30 border-green-500"
-                      : "bg-red-50 dark:bg-red-950/30 border-red-500"
-                }`}
-              >
-                <p className="font-medium text-sm mb-1">
-                  {idx + 1}. {q.question}
-                </p>
-                {q.skipped ? (
-                  <p className="text-xs text-gray-600 dark:text-gray-400">
-                    ⏭️ Skipped
+        {summary.questions.length > 0 && (
+          <div className="border-t border-primary/20 pt-4 mt-4">
+            <p className="font-semibold mb-3">Question Breakdown:</p>
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {summary.questions.map((q, idx) => (
+                <div
+                  key={idx}
+                  className={`p-3 rounded-lg border-l-4 ${
+                    q.skipped
+                      ? "bg-gray-100 dark:bg-gray-800 border-gray-400"
+                      : q.isCorrect
+                        ? "bg-green-50 dark:bg-green-950/30 border-green-500"
+                        : "bg-red-50 dark:bg-red-950/30 border-red-500"
+                  }`}
+                >
+                  <p className="font-medium text-sm mb-1">
+                    {idx + 1}. {q.question}
                   </p>
-                ) : (
-                  <>
-                    <p className="text-xs">
-                      <span
-                        className={
-                          q.isCorrect
-                            ? "text-green-700 dark:text-green-400"
-                            : "text-red-700 dark:text-red-400"
-                        }
-                      >
-                        Your answer: {q.userAnswer || "No answer"}
-                      </span>
+                  {q.skipped ? (
+                    <p className="text-xs text-gray-600 dark:text-gray-400">
+                      ⏭️ Skipped
                     </p>
-                    {q.hintsUsed > 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        💡 {q.hintsUsed} hint{q.hintsUsed > 1 ? "s" : ""} used
+                  ) : (
+                    <>
+                      <p className="text-xs">
+                        <span
+                          className={
+                            q.isCorrect
+                              ? "text-green-700 dark:text-green-400"
+                              : "text-red-700 dark:text-red-400"
+                          }
+                        >
+                          Your answer: {q.userAnswer || "No answer"}
+                        </span>
                       </p>
-                    )}
-                  </>
-                )}
-              </div>
-            ))}
+                      {q.hintsUsed > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          💡 {q.hintsUsed} hint{q.hintsUsed > 1 ? "s" : ""} used
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
